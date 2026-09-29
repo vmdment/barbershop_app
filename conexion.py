@@ -8,22 +8,28 @@ class Conexion:
         self._connectionString = connectionString
     
     def openConnection(self) -> None:
-        self._conexion = pyodbc.connect(self.connectionString)
-        self._cursor = conexion.cursor()
+        self._conexion = pyodbc.connect(self._connectionString)
+        self._cursor = self._conexion.cursor()
     
-    def execute(self, script: str) -> pyodbc.Cursor:
+    def execute(self, script: str,isQuery: bool=False) -> pyodbc.Cursor:   
         data = self._cursor.execute(script)
+        if not isQuery:
+            self._conexion.commit()
         return data
     
     def closeConnection(self) -> None:
-        self._cursor.close()
-        self._conexion.close()
+        if self._cursor:
+            self._cursor.close()
+        if self._conexion:
+            self._conexion.close()
+
+       
     
 conexion = Conexion(
     (
-        "Driver={MySQL ODBC 9.0 Unicode Driver};"
+        "Driver={MySQL ODBC 26.7 Unicode Driver};"
         "Server=localhost;"
-        "Database=lab_1_luis_mosquera;"
+        "Database=barbershop_db;"
         "PORT=3306;"
         "UID=usuario_python;"
         "PWD=5sd64g56dfg54;"

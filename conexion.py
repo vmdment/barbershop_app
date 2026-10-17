@@ -1,10 +1,38 @@
+import configparser
 import re
+from pathlib import Path
 
 import pyodbc
+
+ARCHIVO_CONFIG = Path(__file__).with_name("config.ini")
 
 
 class ErrorBD(Exception):
     """Error de base de datos con un mensaje legible para el usuario."""
+
+
+def leerConfiguracion(ruta: Path = ARCHIVO_CONFIG) -> str:
+    """Arma la cadena de conexión con los datos de config.ini (sección [mysql])."""
+    if not ruta.exists():
+        raise ErrorBD(f"No se encontró {ruta.name}. Copie config.example.ini como "
+                      f"config.ini y complete los datos de conexión.")
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(ruta, encoding="utf-8")
+    try:
+        mysql = config["mysql"]
+        datos = {clave: mysql[clave] for clave in ("driver", "server", "port", "database", "user", "password")}
+    except KeyError as e:
+        raise ErrorBD(f"Falta {e} en {ruta.name} (sección [mysql]).") from None
+    # Las llaves permiten usar ; u otros símbolos en la contraseña
+    password = datos["password"].replace("}", "}}")
+    return (
+        f"Driver={{{datos['driver']}}};"
+        f"Server={datos['server']};"
+        f"Database={datos['database']};"
+        f"PORT={datos['port']};"
+        f"UID={datos['user']};"
+        f"PWD={{{password}}};"
+    )
 
 
 # Códigos de error de MySQL más comunes y su explicación
@@ -45,10 +73,12 @@ class Conexion:
     _cursor: pyodbc.Cursor = None
     _conexion: pyodbc.Connection = None
 
-    def __init__(self, connectionString: str):
+    def __init__(self, connectionString: str = ""):
         self._connectionString = connectionString
 
     def openConnection(self) -> None:
+        if not self._connectionString:
+            self._connectionString = leerConfiguracion()
         try:
             self._conexion = pyodbc.connect(self._connectionString)
         except pyodbc.Error as e:
@@ -94,13 +124,5 @@ class Conexion:
         self._conexion = None
 
 
-conexion = Conexion(
-    (
-        "Driver={MySQL ODBC 26.7 Unicode Driver};"
-        "Server=localhost;"
-        "Database=barbershop_db;"
-        "PORT=3306;"
-        "UID=usuario_python;"
-        "PWD=5sd64g56dfg54;"
-    )
-)
+# Los datos de conexión se leen de config.ini al abrir la conexión
+conexion = Conexion()

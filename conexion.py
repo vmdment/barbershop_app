@@ -1,36 +1,51 @@
-import configparser
+import os
 import re
 from pathlib import Path
 
 import pyodbc
 
-ARCHIVO_CONFIG = Path(__file__).with_name("config.ini")
+ARCHIVO_ENV = Path(__file__).with_name(".env")
+VARIABLES_BD = ("DB_DRIVER", "DB_SERVER", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD")
 
 
 class ErrorBD(Exception):
     """Error de base de datos con un mensaje legible para el usuario."""
 
 
-def leerConfiguracion(ruta: Path = ARCHIVO_CONFIG) -> str:
-    """Arma la cadena de conexión con los datos de config.ini (sección [mysql])."""
-    if not ruta.exists():
-        raise ErrorBD(f"No se encontró {ruta.name}. Copie config.example.ini como "
-                      f"config.ini y complete los datos de conexión.")
-    config = configparser.ConfigParser(interpolation=None)
-    config.read(ruta, encoding="utf-8")
-    try:
-        mysql = config["mysql"]
-        datos = {clave: mysql[clave] for clave in ("driver", "server", "port", "database", "user", "password")}
-    except KeyError as e:
-        raise ErrorBD(f"Falta {e} en {ruta.name} (sección [mysql]).") from None
+def leerEnv(ruta: Path) -> dict:
+    """Lee un archivo .env con líneas CLAVE=valor (ignora vacías y comentarios #)."""
+    valores = {}
+    for linea in ruta.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        clave, valor = linea.split("=", 1)
+        valor = valor.strip()
+        if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in "\"'":
+            valor = valor[1:-1]
+        valores[clave.strip()] = valor
+    return valores
+
+
+def leerConfiguracion(ruta: Path = ARCHIVO_ENV) -> str:
+    """Arma la cadena de conexión con las variables DB_* del archivo .env.
+    Las variables de entorno del sistema tienen prioridad sobre el archivo."""
+    archivo = leerEnv(ruta) if ruta.exists() else {}
+    datos = {clave: os.environ.get(clave, archivo.get(clave)) for clave in VARIABLES_BD}
+    faltantes = [clave for clave, valor in datos.items() if not valor]
+    if faltantes:
+        if not ruta.exists():
+            raise ErrorBD("No se encontró el archivo .env. Copie .env.example como .env "
+                          "y complete los datos de conexión.")
+        raise ErrorBD(f"Faltan datos de conexión en .env: {', '.join(faltantes)}.")
     # Las llaves permiten usar ; u otros símbolos en la contraseña
-    password = datos["password"].replace("}", "}}")
+    password = datos["DB_PASSWORD"].replace("}", "}}")
     return (
-        f"Driver={{{datos['driver']}}};"
-        f"Server={datos['server']};"
-        f"Database={datos['database']};"
-        f"PORT={datos['port']};"
-        f"UID={datos['user']};"
+        f"Driver={{{datos['DB_DRIVER']}}};"
+        f"Server={datos['DB_SERVER']};"
+        f"Database={datos['DB_NAME']};"
+        f"PORT={datos['DB_PORT']};"
+        f"UID={datos['DB_USER']};"
         f"PWD={{{password}}};"
     )
 
@@ -124,5 +139,5 @@ class Conexion:
         self._conexion = None
 
 
-# Los datos de conexión se leen de config.ini al abrir la conexión
+# Los datos de conexión se leen de .env al abrir la conexión
 conexion = Conexion()

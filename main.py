@@ -1,11 +1,12 @@
-from conexion import ErrorBD, conexion
+from Utilidades import Conexion
+from Utilidades.Errores import ErrorBD
 from crud import elegir_opcion, error, menu_entidad, titulo
-from entidades import MENU_PRINCIPAL
+from menus import MENU_PRINCIPAL
 
 
 def main():
     try:
-        conexion.openConnection()
+        Conexion.conexion.openConnection()
     except ErrorBD as e:
         error(str(e))
         return
@@ -19,7 +20,7 @@ def main():
     except (KeyboardInterrupt, EOFError):
         print()
     finally:
-        conexion.closeConnection()
+        Conexion.conexion.closeConnection()
     print("\n  Hasta luego.\n")
 
 

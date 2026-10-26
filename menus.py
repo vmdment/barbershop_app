@@ -1,8 +1,16 @@
-"""Definición de las 15 entidades del sistema y sus opciones de menú."""
-from datetime import datetime
+"""Definición de las 15 entidades del sistema y sus opciones de menú.
 
-import validaciones as v
-from conexion import ErrorBD, conexion
+Cada entidad del menú se apoya en su clase de Entidades y en su objeto de Aplicaciones;
+las reglas de negocio (validaciones entre campos) viven en la capa de Aplicaciones."""
+from Aplicaciones import (BarberiasAplicacion, BarberosAplicacion, BloqueosAplicacion, CitasAplicacion,
+                          ComprasAplicacion, DetalleVentasAplicacion, HorariosAplicacion,
+                          ProductosAplicacion, ProveedoresAplicacion, RolesAplicacion,
+                          ServiciosAplicacion, ServiciosBarberoAplicacion, ServiciosCitaAplicacion,
+                          UsuariosAplicacion, VentasAplicacion)
+from Entidades import (Barberias, Barberos, Bloqueos, Citas, Compras, DetalleVentas, Horarios, Productos,
+                       Proveedores, Roles, Servicios, ServiciosBarbero, ServiciosCita, Usuarios, Ventas)
+from Utilidades import Validaciones as v
+from Utilidades.Errores import ErrorBD, ErrorValidacion
 from crud import (Campo, Entidad, Referencia, aviso, elegir_registro, error, exito, mostrar_ficha,
                   mostrar_tabla, pedir_campo, registrar, si_no)
 
@@ -24,99 +32,73 @@ PRECIO_MAX = 99999999.99
 fmt = v.formatear
 
 # ------------------------------------------------------------------
+# Objetos de la capa de Aplicaciones (uno por entidad)
+# ------------------------------------------------------------------
+
+ROLES_APP = RolesAplicacion.RolesAplicacion()
+USUARIOS_APP = UsuariosAplicacion.UsuariosAplicacion()
+BARBERIAS_APP = BarberiasAplicacion.BarberiasAplicacion()
+BARBEROS_APP = BarberosAplicacion.BarberosAplicacion()
+HORARIOS_APP = HorariosAplicacion.HorariosAplicacion()
+BLOQUEOS_APP = BloqueosAplicacion.BloqueosAplicacion()
+SERVICIOS_APP = ServiciosAplicacion.ServiciosAplicacion()
+SERVICIOS_BARBERO_APP = ServiciosBarberoAplicacion.ServiciosBarberoAplicacion()
+CITAS_APP = CitasAplicacion.CitasAplicacion()
+SERVICIOS_CITA_APP = ServiciosCitaAplicacion.ServiciosCitaAplicacion()
+PRODUCTOS_APP = ProductosAplicacion.ProductosAplicacion()
+VENTAS_APP = VentasAplicacion.VentasAplicacion()
+DETALLE_VENTAS_APP = DetalleVentasAplicacion.DetalleVentasAplicacion()
+PROVEEDORES_APP = ProveedoresAplicacion.ProveedoresAplicacion()
+COMPRAS_APP = ComprasAplicacion.ComprasAplicacion()
+
+
+def filas(entidades: list) -> list[dict]:
+    """Convierte una lista de entidades en filas (diccionarios) para mostrarlas en tabla."""
+    return [entidad.ADiccionario() for entidad in entidades]
+
+
+# ------------------------------------------------------------------
 # Listas para elegir registros relacionados (claves foráneas)
 # ------------------------------------------------------------------
 
-R_ROLES = Referencia("proc_select_roles", "name", "roles")
-R_USUARIOS = Referencia("proc_select_users", lambda r: f"{r['full_name']} ({r['role_name']})", "usuarios")
-R_BARBERIAS = Referencia("proc_select_barbershops", lambda r: f"{r['name']} - {r['city']}", "barberías")
-R_BARBEROS = Referencia("proc_select_barbers",
+R_ROLES = Referencia(lambda _: ROLES_APP.Consultar(), "name", "roles")
+R_USUARIOS = Referencia(lambda _: USUARIOS_APP.Consultar(),
+                        lambda r: f"{r['full_name']} ({r['role_name']})", "usuarios")
+R_BARBERIAS = Referencia(lambda _: BARBERIAS_APP.Consultar(),
+                         lambda r: f"{r['name']} - {r['city']}", "barberías")
+R_BARBEROS = Referencia(lambda _: BARBEROS_APP.Consultar(),
                         lambda r: r["barber_name"] + ("" if r["is_active"] else " (inactivo)"), "barberos")
-R_BARBEROS_ACTIVOS = Referencia("proc_select_barbers", "barber_name", "barberos activos",
+R_BARBEROS_ACTIVOS = Referencia(R_BARBEROS.origen, "barber_name", "barberos activos",
                                 filtrar=lambda r: bool(r["is_active"]))
-R_SERVICIOS = Referencia("proc_select_services",
+R_SERVICIOS = Referencia(lambda _: SERVICIOS_APP.Consultar(),
                          lambda r: f"{r['name']} - ${fmt(r['base_price'])} / {r['duration_minutes']} min",
                          "servicios")
-R_CITAS = Referencia("proc_select_appointments",
+R_CITAS = Referencia(lambda _: CITAS_APP.Consultar(),
                      lambda r: f"{r['appointment_date']} {fmt(r['start_time'])} - {r['customer_name']} "
                                f"con {r['barber_name']} ({ESTADOS[r['status']]})", "citas")
-R_CITAS_ABIERTAS = Referencia(R_CITAS.proc, R_CITAS.texto, "citas pendientes o confirmadas",
+R_CITAS_ABIERTAS = Referencia(R_CITAS.origen, R_CITAS.texto, "citas pendientes o confirmadas",
                               filtrar=lambda r: r["status"] in TRANSICIONES)
-R_PRODUCTOS_CON_STOCK = Referencia("proc_select_products",
+R_PRODUCTOS_CON_STOCK = Referencia(lambda _: PRODUCTOS_APP.ConsultarDisponibles(),
                                    lambda r: f"{r['name']} - ${fmt(r['selling_price'])} (stock: {r['stock_quantity']})",
                                    "productos con stock")
-R_VENTAS = Referencia("proc_select_product_sales",
+R_VENTAS = Referencia(lambda _: VENTAS_APP.Consultar(),
                       lambda r: f"{fmt(r['sale_datetime'])} - {r['customer_name'] or 'Sin cliente'} "
                                 f"- ${fmt(r['total_amount'])}", "ventas")
-R_PROVEEDORES = Referencia("proc_select_suppliers", "company_name", "proveedores")
+R_PROVEEDORES = Referencia(lambda _: PROVEEDORES_APP.Consultar(), "company_name", "proveedores")
 
 
-def _barbero_de_la_cita(valores: dict) -> tuple:
-    cita = conexion.call("proc_select_appointment_by_id", (valores["appointment_id"],))
+def _barbero_de_la_cita(valores: dict) -> int:
+    cita = CITAS_APP.BuscarPorId(valores["appointment_id"])
     if not cita:
         raise v.Cancelado("La cita indicada no existe.")
-    return (cita[0]["barber_id"],)
+    return cita.GetBarberId()
 
 
 R_SERVICIOS_DE_LA_CITA = Referencia(
-    "proc_select_barber_services",
+    lambda valores: SERVICIOS_BARBERO_APP.Consultar(_barbero_de_la_cita(valores)),
     lambda r: f"{r['service_name']} - ${fmt(r['final_price'])} / {r['final_duration']} min",
     "servicios asignados al barbero de la cita (vea 'Servicios por barbero')",
-    id_col="service_id", params=_barbero_de_la_cita)
-
-# ------------------------------------------------------------------
-# Validaciones entre campos (se revisan antes de llamar a la BD)
-# ------------------------------------------------------------------
-
-
-def validar_barbero(d):
-    if not d["provides_home_service"] and not d["provides_shop_service"]:
-        return "El barbero debe atender en barbería, a domicilio o ambos."
-    if d["provides_shop_service"] and d["barbershop_id"] is None:
-        return "Si atiende en barbería debe indicar a qué barbería pertenece."
-
-
-def validar_horario(d):
-    if d["end_time"] <= d["start_time"]:
-        return "La hora de salida debe ser posterior a la de entrada."
-    if d["lunch_start_time"] is not None:
-        if d["lunch_end_time"] is None:
-            return "Debe indicar el fin del almuerzo."
-        if d["lunch_end_time"] <= d["lunch_start_time"]:
-            return "El fin del almuerzo debe ser posterior a su inicio."
-        if d["lunch_start_time"] < d["start_time"] or d["lunch_end_time"] > d["end_time"]:
-            return "El almuerzo debe estar dentro del horario de trabajo."
-
-
-def validar_bloqueo(d):
-    if d["end_datetime"] <= d["start_datetime"]:
-        return "El fin del bloqueo debe ser posterior a su inicio."
-
-
-def validar_cita(d):
-    if d["end_time"] <= d["start_time"]:
-        return "La hora de fin debe ser posterior a la hora de inicio."
-    if datetime.combine(d["appointment_date"], d["start_time"]) <= datetime.now():
-        return "No se pueden agendar citas en el pasado."
-
-
-def validar_producto(d):
-    if d["barbershop_id"] is None and d["barber_id"] is None:
-        return "El producto debe pertenecer a una barbería o a un barbero."
-
-
-def validar_detalle_venta(d):
-    if "product_id" not in d:   # al actualizar, el stock lo valida la BD
-        return None
-    producto = conexion.call("proc_select_product_by_id", (d["product_id"],))
-    if producto and d["quantity"] > producto[0]["stock_quantity"]:
-        return f"Stock insuficiente: solo hay {producto[0]['stock_quantity']} unidad(es)."
-
-
-def validar_compra(d):
-    if d["barber_id"] is None and d["barbershop_id"] is None:
-        return "La compra debe asignarse a un barbero o a una barbería."
-
+    id_col="service_id")
 
 # ------------------------------------------------------------------
 # Campos reutilizados
@@ -147,8 +129,7 @@ ROLES = Entidad(
     titulo="Roles", singular="rol",
     columnas=[("id", "ID"), ("name", "Nombre")],
     campos=[Campo("name", "Nombre del rol", largo=50)],
-    proc_listar="proc_select_roles", proc_buscar="proc_select_role_by_id",
-    proc_insertar="proc_insert_role", proc_actualizar="proc_update_role", proc_eliminar="proc_delete_role",
+    clase=Roles.Roles, aplicacion=ROLES_APP,
 )
 
 USUARIOS = Entidad(
@@ -162,8 +143,7 @@ USUARIOS = Entidad(
         Campo("password_hash", "Contraseña", "password"),
         Campo("phone", "Teléfono", "telefono"),
     ],
-    proc_listar="proc_select_users", proc_buscar="proc_select_user_by_id",
-    proc_insertar="proc_insert_user", proc_actualizar="proc_update_user", proc_eliminar="proc_delete_user",
+    clase=Usuarios.Usuarios, aplicacion=USUARIOS_APP,
 )
 
 BARBERIAS = Entidad(
@@ -177,9 +157,7 @@ BARBERIAS = Entidad(
         Campo("city", "Ciudad", largo=50),
         Campo("phone", "Teléfono", "telefono"),
     ],
-    proc_listar="proc_select_barbershops", proc_buscar="proc_select_barbershop_by_id",
-    proc_insertar="proc_insert_barbershop", proc_actualizar="proc_update_barbershop",
-    proc_eliminar="proc_delete_barbershop",
+    clase=Barberias.Barberias, aplicacion=BARBERIAS_APP,
 )
 
 _CAMPOS_BARBERO = [
@@ -196,9 +174,7 @@ BARBEROS = Entidad(
               ("commission_rate", "Comisión %"), ("is_active", "Activo", si_no)],
     campos=_CAMPOS_BARBERO,
     campos_actualizar=_CAMPOS_BARBERO + [Campo("is_active", "¿Activo?", "sino")],
-    validar=validar_barbero,
-    proc_listar="proc_select_barbers", proc_buscar="proc_select_barber_by_id",
-    proc_insertar="proc_insert_barber", proc_actualizar="proc_update_barber", proc_eliminar="proc_delete_barber",
+    clase=Barberos.Barberos, aplicacion=BARBEROS_APP,
 )
 
 HORARIOS = Entidad(
@@ -215,10 +191,7 @@ HORARIOS = Entidad(
         Campo("lunch_end_time", "Fin del almuerzo", "hora",
               condicion=lambda d: d["lunch_start_time"] is not None),
     ],
-    validar=validar_horario,
-    proc_listar="proc_select_barber_schedule", proc_buscar="proc_select_barber_schedule_by_id",
-    proc_insertar="proc_insert_barber_schedule", proc_actualizar="proc_update_barber_schedule",
-    proc_eliminar="proc_delete_barber_schedule",
+    clase=Horarios.Horarios, aplicacion=HORARIOS_APP,
 )
 
 BLOQUEOS = Entidad(
@@ -231,10 +204,7 @@ BLOQUEOS = Entidad(
         Campo("end_datetime", "Fin", "fechahora"),
         Campo("reason", "Motivo", obligatorio=False, largo=255),
     ],
-    validar=validar_bloqueo,
-    proc_listar="proc_select_schedule_blocks", proc_buscar="proc_select_schedule_block_by_id",
-    proc_insertar="proc_insert_schedule_block", proc_actualizar="proc_update_schedule_block",
-    proc_eliminar="proc_delete_schedule_block",
+    clase=Bloqueos.Bloqueos, aplicacion=BLOQUEOS_APP,
 )
 
 SERVICIOS = Entidad(
@@ -250,9 +220,7 @@ SERVICIOS = Entidad(
         Campo("buffer_minutes", "Tiempo de preparación (minutos)", "entero", False, minimo=0, maximo=240,
               ayuda="Enter = 10 minutos"),
     ],
-    proc_listar="proc_select_services", proc_buscar="proc_select_service_by_id",
-    proc_insertar="proc_insert_service", proc_actualizar="proc_update_service",
-    proc_eliminar="proc_delete_service",
+    clase=Servicios.Servicios, aplicacion=SERVICIOS_APP,
 )
 
 SERVICIOS_BARBERO = Entidad(
@@ -269,9 +237,7 @@ SERVICIOS_BARBERO = Entidad(
         Campo("custom_duration_minutes", "Duración personalizada (min)", "entero", False, minimo=1, maximo=600,
               ayuda="Enter = usar la duración del servicio"),
     ],
-    proc_listar="proc_select_barber_services", proc_buscar="proc_select_barber_service_by_id",
-    proc_insertar="proc_insert_barber_service", proc_actualizar="proc_update_barber_service",
-    proc_eliminar="proc_delete_barber_service",
+    clase=ServiciosBarbero.ServiciosBarbero, aplicacion=SERVICIOS_BARBERO_APP,
 )
 
 SERVICIOS_CITA = Entidad(
@@ -291,9 +257,7 @@ SERVICIOS_CITA = Entidad(
         Campo("applied_price", "Precio", "decimal", minimo=0, maximo=PRECIO_MAX),
         Campo("applied_duration_minutes", "Duración (min)", "entero", minimo=1, maximo=600),
     ],
-    proc_listar="proc_select_appointment_details", proc_buscar="proc_select_appointment_detail_by_id",
-    proc_insertar="proc_insert_appointment_detail", proc_actualizar="proc_update_appointment_detail",
-    proc_eliminar="proc_delete_appointment_detail",
+    clase=ServiciosCita.ServiciosCita, aplicacion=SERVICIOS_CITA_APP,
 )
 
 
@@ -301,25 +265,25 @@ def agregar_servicios_a_cita(cita_id: int, _valores=None) -> None:
     while v.confirmar("¿Desea agregar un servicio a la cita?"):
         try:
             registrar(SERVICIOS_CITA, fijos={"appointment_id": cita_id})
-        except v.Cancelado as e:
+        except (v.Cancelado, ErrorValidacion) as e:
             aviso(str(e))
         except ErrorBD as e:
             error(str(e))
-    cita = conexion.call("proc_select_appointment_by_id", (cita_id,))
+    cita = CITAS_APP.BuscarPorId(cita_id)
     if cita:
-        aviso(f"Total de la cita: ${fmt(cita[0]['total_amount'])}")
+        aviso(f"Total de la cita: ${fmt(cita.GetTotalAmount())}")
 
 
 def listar_citas_por_cliente() -> None:
     cliente = pedir_campo(Campo("customer_id", "Cliente", "ref", referencia=R_USUARIOS), {})
-    filas = conexion.call("proc_select_appointments_by_customer", (cliente,))
-    mostrar_tabla(filas, [c for c in COLUMNAS_CITA if c[0] != "customer_name"])
+    citas = filas(CITAS_APP.ConsultarPorCliente(cliente))
+    mostrar_tabla(citas, [c for c in COLUMNAS_CITA if c[0] != "customer_name"])
 
 
 def listar_citas_por_barbero() -> None:
     barbero = pedir_campo(campo_barbero(), {})
-    filas = conexion.call("proc_select_appointments_by_barber", (barbero,))
-    mostrar_tabla(filas, [c for c in COLUMNAS_CITA if c[0] != "barber_name"])
+    citas = filas(CITAS_APP.ConsultarPorBarbero(barbero))
+    mostrar_tabla(citas, [c for c in COLUMNAS_CITA if c[0] != "barber_name"])
 
 
 def cambiar_estado_cita() -> None:
@@ -329,14 +293,14 @@ def cambiar_estado_cita() -> None:
         raise v.Cancelado(f"La cita está {ESTADOS[cita['status']].lower()}; ya no se puede cambiar su estado.")
     print(f"\n  Estado actual: {ESTADOS[cita['status']]}")
     nuevo = v.pedir_opcion("Nuevo estado", {estado: ESTADOS[estado] for estado in opciones})
-    conexion.call("proc_update_appointment_status", (cita["id"], nuevo))
+    CITAS_APP.CambiarEstado(cita["id"], nuevo)
     exito(f"La cita ahora está {ESTADOS[nuevo].lower()}.")
 
 
 def ver_servicios_de_cita() -> None:
     cita = elegir_registro(CITAS, "consultar")
     mostrar_ficha(cita, COLUMNAS_CITA)
-    mostrar_tabla(conexion.call("proc_select_appointment_details", (cita["id"],)), SERVICIOS_CITA.columnas)
+    mostrar_tabla(filas(SERVICIOS_CITA_APP.Consultar(cita["id"])), SERVICIOS_CITA.columnas)
 
 
 def agregar_servicio_a_cita() -> None:
@@ -359,9 +323,6 @@ CITAS = Entidad(
         Campo("start_time", "Hora de inicio", "hora"),
         Campo("end_time", "Hora de fin", "hora"),
     ],
-    parametros=["customer_id", "barber_id", "barbershop_id", "appointment_date", "start_time",
-                "end_time", "location_type", "home_address"],
-    validar=validar_cita,
     despues_de_insertar=agregar_servicios_a_cita,
     extras=[
         ("Cambiar estado (confirmar / completar / cancelar)", cambiar_estado_cita),
@@ -370,9 +331,7 @@ CITAS = Entidad(
         ("Listar citas de un cliente", listar_citas_por_cliente),
         ("Listar citas de un barbero", listar_citas_por_barbero),
     ],
-    proc_listar="proc_select_appointments", proc_buscar="proc_select_appointment_by_id",
-    proc_insertar="proc_insert_appointment", proc_actualizar="proc_update_appointment",
-    proc_eliminar="proc_delete_appointment",
+    clase=Citas.Citas, aplicacion=CITAS_APP,
 )
 
 PRODUCTOS = Entidad(
@@ -388,16 +347,13 @@ PRODUCTOS = Entidad(
         Campo("min_stock_level", "Stock mínimo", "entero", False, minimo=0, maximo=1_000_000,
               ayuda="Enter = 5"),
     ],
-    validar=validar_producto,
     extras=[
         ("Listar disponibles (con stock)",
-         lambda: mostrar_tabla(conexion.call("proc_select_products"), COLUMNAS_PRODUCTO)),
+         lambda: mostrar_tabla(filas(PRODUCTOS_APP.ConsultarDisponibles()), COLUMNAS_PRODUCTO)),
         ("Listar con stock bajo",
-         lambda: mostrar_tabla(conexion.call("proc_select_low_stock_products"), COLUMNAS_PRODUCTO)),
+         lambda: mostrar_tabla(filas(PRODUCTOS_APP.ConsultarStockBajo()), COLUMNAS_PRODUCTO)),
     ],
-    proc_listar="proc_select_all_products", proc_buscar="proc_select_product_by_id",
-    proc_insertar="proc_insert_product", proc_actualizar="proc_update_product",
-    proc_eliminar="proc_delete_product",
+    clase=Productos.Productos, aplicacion=PRODUCTOS_APP,
 )
 
 DETALLE_VENTAS = Entidad(
@@ -416,10 +372,7 @@ DETALLE_VENTAS = Entidad(
         Campo("quantity", "Cantidad", "entero", minimo=1, maximo=1_000_000),
         Campo("unit_price", "Precio unitario", "decimal", minimo=0, maximo=PRECIO_MAX),
     ],
-    validar=validar_detalle_venta,
-    proc_listar="proc_select_product_sale_details", proc_buscar="proc_select_product_sale_detail_by_id",
-    proc_insertar="proc_insert_product_sale_detail", proc_actualizar="proc_update_product_sale_detail",
-    proc_eliminar="proc_delete_product_sale_detail",
+    clase=DetalleVentas.DetalleVentas, aplicacion=DETALLE_VENTAS_APP,
 )
 
 
@@ -427,19 +380,19 @@ def agregar_productos_a_venta(venta_id: int, _valores=None) -> None:
     while v.confirmar("¿Desea agregar un producto a la venta?"):
         try:
             registrar(DETALLE_VENTAS, fijos={"product_sale_id": venta_id})
-        except v.Cancelado as e:
+        except (v.Cancelado, ErrorValidacion) as e:
             aviso(str(e))
         except ErrorBD as e:
             error(str(e))
-    venta = conexion.call("proc_select_product_sale_by_id", (venta_id,))
+    venta = VENTAS_APP.BuscarPorId(venta_id)
     if venta:
-        aviso(f"Total de la venta: ${fmt(venta[0]['total_amount'])}")
+        aviso(f"Total de la venta: ${fmt(venta.GetTotalAmount())}")
 
 
 def ver_detalle_de_venta() -> None:
     venta = elegir_registro(VENTAS, "consultar")
     mostrar_ficha(venta, VENTAS.columnas)
-    mostrar_tabla(conexion.call("proc_select_product_sale_details", (venta["id"],)), DETALLE_VENTAS.columnas)
+    mostrar_tabla(filas(DETALLE_VENTAS_APP.Consultar(venta["id"])), DETALLE_VENTAS.columnas)
 
 
 def agregar_producto_a_venta() -> None:
@@ -462,9 +415,7 @@ VENTAS = Entidad(
         ("Ver detalle de una venta", ver_detalle_de_venta),
         ("Agregar productos a una venta", agregar_producto_a_venta),
     ],
-    proc_listar="proc_select_product_sales", proc_buscar="proc_select_product_sale_by_id",
-    proc_insertar="proc_insert_product_sale", proc_actualizar="proc_update_product_sale",
-    proc_eliminar="proc_delete_product_sale",
+    clase=Ventas.Ventas, aplicacion=VENTAS_APP,
 )
 
 PROVEEDORES = Entidad(
@@ -478,9 +429,7 @@ PROVEEDORES = Entidad(
         Campo("email", "Correo electrónico", "email", False),
         Campo("address", "Dirección", obligatorio=False, largo=150),
     ],
-    proc_listar="proc_select_suppliers", proc_buscar="proc_select_supplier_by_id",
-    proc_insertar="proc_insert_supplier", proc_actualizar="proc_update_supplier",
-    proc_eliminar="proc_delete_supplier",
+    clase=Proveedores.Proveedores, aplicacion=PROVEEDORES_APP,
 )
 
 COMPRAS = Entidad(
@@ -495,10 +444,7 @@ COMPRAS = Entidad(
         Campo("tools_description", "Descripción de lo comprado", largo=1000),
         Campo("total_paid", "Total pagado", "decimal", minimo=0.01, maximo=PRECIO_MAX),
     ],
-    validar=validar_compra,
-    proc_listar="proc_select_supplier_purchases", proc_buscar="proc_select_supplier_purchase_by_id",
-    proc_insertar="proc_insert_supplier_purchase", proc_actualizar="proc_update_supplier_purchase",
-    proc_eliminar="proc_delete_supplier_purchase",
+    clase=Compras.Compras, aplicacion=COMPRAS_APP,
 )
 
 MENU_PRINCIPAL = [

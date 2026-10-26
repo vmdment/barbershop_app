@@ -7,8 +7,11 @@ porque los procedimientos no permiten agendar en el pasado.
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from conexion import ErrorBD, conexion
-from validaciones import hashear_password
+from Utilidades import Conexion
+from Utilidades.Errores import ErrorBD
+from Utilidades.Validaciones import hashear_password
+
+conexion = Conexion.conexion
 
 D = Decimal
 

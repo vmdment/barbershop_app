@@ -1,58 +1,12 @@
-import os
 import re
-from pathlib import Path
 
 import pyodbc
 
-ARCHIVO_ENV = Path(__file__).with_name(".env")
-VARIABLES_BD = ("DB_DRIVER", "DB_SERVER", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD")
-
-
-class ErrorBD(Exception):
-    """Error de base de datos con un mensaje legible para el usuario."""
-
-
-def leerEnv(ruta: Path) -> dict:
-    """Lee un archivo .env con líneas CLAVE=valor (ignora vacías y comentarios #)."""
-    valores = {}
-    for linea in ruta.read_text(encoding="utf-8").splitlines():
-        linea = linea.strip()
-        if not linea or linea.startswith("#") or "=" not in linea:
-            continue
-        clave, valor = linea.split("=", 1)
-        valor = valor.strip()
-        if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in "\"'":
-            valor = valor[1:-1]
-        valores[clave.strip()] = valor
-    return valores
-
-
-def leerConfiguracion(ruta: Path = ARCHIVO_ENV) -> str:
-    """Arma la cadena de conexión con las variables DB_* del archivo .env.
-    Las variables de entorno del sistema tienen prioridad sobre el archivo."""
-    archivo = leerEnv(ruta) if ruta.exists() else {}
-    datos = {clave: os.environ.get(clave, archivo.get(clave)) for clave in VARIABLES_BD}
-    faltantes = [clave for clave, valor in datos.items() if not valor]
-    if faltantes:
-        if not ruta.exists():
-            raise ErrorBD("No se encontró el archivo .env. Copie .env.example como .env "
-                          "y complete los datos de conexión.")
-        raise ErrorBD(f"Faltan datos de conexión en .env: {', '.join(faltantes)}.")
-    # Las llaves permiten usar ; u otros símbolos en la contraseña
-    password = datos["DB_PASSWORD"].replace("}", "}}")
-    return (
-        f"Driver={{{datos['DB_DRIVER']}}};"
-        f"Server={datos['DB_SERVER']};"
-        f"Database={datos['DB_NAME']};"
-        f"PORT={datos['DB_PORT']};"
-        f"UID={datos['DB_USER']};"
-        f"PWD={{{password}}};"
-    )
-
+from Utilidades import Configuracion, Errores
 
 # Códigos de error de MySQL más comunes y su explicación
 _MENSAJES_MYSQL = {
-    "1045": "Usuario o contraseña de la base de datos incorrectos (revise conexion.py).",
+    "1045": "Usuario o contraseña de la base de datos incorrectos (revise el archivo .env).",
     "1049": "La base de datos barbershop_db no existe. Ejecute primero el script bd.sql.",
     "1062": "Ya existe un registro con esos datos.",
     "1264": "Un valor numérico está fuera del rango permitido.",
@@ -93,11 +47,11 @@ class Conexion:
 
     def openConnection(self) -> None:
         if not self._connectionString:
-            self._connectionString = leerConfiguracion()
+            self._connectionString = Configuracion.Configuracion.StringConexion()
         try:
             self._conexion = pyodbc.connect(self._connectionString)
         except pyodbc.Error as e:
-            raise ErrorBD(traducirError(e)) from e
+            raise Errores.ErrorBD(traducirError(e)) from e
         self._cursor = self._conexion.cursor()
 
     def execute(self, script: str, isQuery: bool = False) -> pyodbc.Cursor:
@@ -110,7 +64,7 @@ class Conexion:
         """Ejecuta un procedimiento almacenado con parámetros seguros (?)
         y devuelve las filas del primer resultado como diccionarios."""
         if self._conexion is None:
-            raise ErrorBD("No hay una conexión abierta con la base de datos.")
+            raise Errores.ErrorBD("No hay una conexión abierta con la base de datos.")
         sql = "{CALL %s(%s)}" % (procedure, ", ".join("?" * len(params)))
         try:
             self._cursor.execute(sql, *params)
@@ -128,7 +82,7 @@ class Conexion:
                 self._conexion.rollback()
             except pyodbc.Error:
                 pass
-            raise ErrorBD(traducirError(e)) from e
+            raise Errores.ErrorBD(traducirError(e)) from e
 
     def closeConnection(self) -> None:
         if self._cursor:
@@ -139,5 +93,5 @@ class Conexion:
         self._conexion = None
 
 
-# Los datos de conexión se leen de .env al abrir la conexión
+# Conexión compartida por todos los repositorios; los datos se leen de .env al abrirla
 conexion = Conexion()

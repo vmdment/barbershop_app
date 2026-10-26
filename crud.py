@@ -1,9 +1,9 @@
-"""Motor genérico de menús CRUD sobre los procedimientos almacenados."""
+"""Motor genérico de menús CRUD sobre la capa de Aplicaciones."""
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-import validaciones as v
-from conexion import ErrorBD, conexion
+from Utilidades import Validaciones as v
+from Utilidades.Errores import ErrorBD, ErrorValidacion
 
 # ------------------------------------------------------------------
 # Presentación
@@ -79,16 +79,14 @@ def si_no(valor) -> str:
 @dataclass
 class Referencia:
     """Lista de registros entre los que el usuario elige un ID."""
-    proc: str
+    origen: Callable[[dict], list]         # entidades a mostrar, según lo ya ingresado
     texto: str | Callable[[dict], str]     # columna o función que describe la fila
     nombre: str                            # para mensajes: "usuarios", "barberos"...
     id_col: str = "id"
-    params: Callable[[dict], tuple] | None = None   # parámetros según lo ya ingresado
     filtrar: Callable[[dict], bool] | None = None   # deja solo las filas elegibles
 
     def obtener(self, valores: dict) -> list[dict]:
-        params = self.params(valores) if self.params else ()
-        filas = conexion.call(self.proc, params)
+        filas = [entidad.ADiccionario() for entidad in self.origen(valores)]
         return [fila for fila in filas if self.filtrar(fila)] if self.filtrar else filas
 
     def describir(self, fila: dict) -> str:
@@ -117,15 +115,10 @@ class Entidad:
     singular: str
     columnas: list[tuple]
     campos: list[Campo]
-    proc_listar: str
-    proc_buscar: str
-    proc_insertar: str | None = None
-    proc_actualizar: str | None = None
-    proc_eliminar: str | None = None
+    clase: type                                        # clase de Entidades (p. ej. Roles.Roles)
+    aplicacion: Any                                    # objeto de Aplicaciones (p. ej. RolesAplicacion)
     campos_actualizar: list[Campo] | None = None
-    parametros: list[str] | None = None                # orden de parámetros si difiere de "campos"
     filtro: Campo | None = None                        # parámetro obligatorio para listar
-    validar: Callable[[dict], str | None] | None = None
     despues_de_insertar: Callable[[int, dict], None] | None = None
     extras: list[tuple[str, Callable[[], None]]] = field(default_factory=list)
     femenino: bool = False
@@ -220,14 +213,16 @@ def pedir_formulario(campos: list[Campo], actuales: dict | None = None,
 # ------------------------------------------------------------------
 
 def buscar_por_id(entidad: Entidad, id_: int) -> dict | None:
-    filas = conexion.call(entidad.proc_buscar, (id_,))
-    return filas[0] if filas else None
+    encontrada = entidad.aplicacion.BuscarPorId(id_)
+    return encontrada.ADiccionario() if encontrada else None
 
 
 def obtener_listado(entidad: Entidad, valor_filtro=None) -> list[dict]:
     if entidad.filtro:
-        return conexion.call(entidad.proc_listar, (valor_filtro,))
-    return conexion.call(entidad.proc_listar)
+        entidades = entidad.aplicacion.Consultar(valor_filtro)
+    else:
+        entidades = entidad.aplicacion.Consultar()
+    return [encontrada.ADiccionario() for encontrada in entidades]
 
 
 def listar(entidad: Entidad) -> None:
@@ -261,23 +256,13 @@ def elegir_registro(entidad: Entidad, accion: str) -> dict:
     return fila
 
 
-def _validar(entidad: Entidad, valores: dict) -> None:
-    if entidad.validar:
-        mensaje = entidad.validar(valores)
-        if mensaje:
-            raise v.Cancelado(mensaje)
-
-
-def _parametros(campos: list[Campo], orden: list[str] | None, valores: dict) -> tuple:
-    return tuple(valores[nombre] for nombre in (orden or [c.nombre for c in campos]))
-
-
 def registrar(entidad: Entidad, fijos: dict | None = None) -> int | None:
     print("  (Escriba 'cancelar' en cualquier momento para abortar)\n")
     valores = pedir_formulario(entidad.campos, fijos=fijos)
-    _validar(entidad, valores)
-    filas = conexion.call(entidad.proc_insertar, _parametros(entidad.campos, entidad.parametros, valores))
-    nuevo_id = filas[0]["id"] if filas else None
+    nueva = entidad.clase()
+    nueva.DesdeDiccionario(valores)
+    nueva = entidad.aplicacion.Insertar(nueva)   # las reglas de negocio las valida la Aplicación
+    nuevo_id = nueva.GetId() or None
     exito(f"{entidad.participio('registrad')} con ID {nuevo_id}.")
     if entidad.despues_de_insertar and nuevo_id is not None:
         entidad.despues_de_insertar(nuevo_id, valores)
@@ -287,12 +272,14 @@ def registrar(entidad: Entidad, fijos: dict | None = None) -> int | None:
 def actualizar(entidad: Entidad) -> None:
     fila = elegir_registro(entidad, "actualizar")
     campos = entidad.campos_actualizar or entidad.campos
-    orden = None if entidad.campos_actualizar else entidad.parametros
     print("\n  (Enter conserva el valor actual entre [ ], '-' borra un campo opcional,")
     print("   'cancelar' aborta)\n")
     valores = pedir_formulario(campos, actuales=fila, actualizando=True)
-    _validar(entidad, valores)
-    conexion.call(entidad.proc_actualizar, (fila["id"],) + _parametros(campos, orden, valores))
+    modificada = entidad.clase()
+    modificada.DesdeDiccionario(fila)         # lo que ya tenía el registro...
+    modificada.DesdeDiccionario(valores)      # ...más lo que el usuario cambió
+    modificada.SetId(fila["id"])
+    entidad.aplicacion.Actualizar(modificada)
     exito(f"{entidad.participio('actualizad')} correctamente.")
 
 
@@ -303,7 +290,7 @@ def eliminar(entidad: Entidad) -> None:
     if not v.confirmar(f"¿Seguro que desea eliminar {entidad.este}?"):
         aviso("No se eliminó nada.")
         return
-    conexion.call(entidad.proc_eliminar, (fila["id"],))
+    entidad.aplicacion.Eliminar(fila["id"])
     exito(f"{entidad.participio('eliminad')} correctamente.")
 
 
@@ -311,7 +298,7 @@ def ejecutar_accion(accion: Callable[[], None]) -> None:
     """Ejecuta una acción del menú atrapando cancelaciones y errores de BD."""
     try:
         accion()
-    except v.Cancelado as e:
+    except (v.Cancelado, ErrorValidacion) as e:
         aviso(str(e))
     except ErrorBD as e:
         error(str(e))
@@ -333,13 +320,10 @@ def menu_entidad(entidad: Entidad) -> None:
     acciones: list[tuple[str, Callable[[], None]]] = [
         ("Listar", lambda: listar(entidad)),
         ("Buscar por ID", lambda: buscar(entidad)),
+        ("Registrar", lambda: registrar(entidad)),
+        ("Actualizar", lambda: actualizar(entidad)),
+        ("Eliminar", lambda: eliminar(entidad)),
     ]
-    if entidad.proc_insertar:
-        acciones.append(("Registrar", lambda: registrar(entidad)))
-    if entidad.proc_actualizar:
-        acciones.append(("Actualizar", lambda: actualizar(entidad)))
-    if entidad.proc_eliminar:
-        acciones.append(("Eliminar", lambda: eliminar(entidad)))
     acciones += entidad.extras
 
     while True:

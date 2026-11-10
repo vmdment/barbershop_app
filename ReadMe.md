@@ -8,16 +8,18 @@ servicios, ventas, inventario y compras) sobre MySQL, usando procedimientos alma
 Requiere Python 3.10 o superior y el driver ODBC de MySQL.
 
     py -3 --version
-    py -m pip install pyodbc
+    py -m pip install pyodbc flask
 
 1. Ejecute `bd.sql` en MySQL (crea `barbershop_db`, las 15 tablas y los procedimientos almacenados).
 2. Copie `.env.example` como `.env` y ajuste el driver ODBC, el usuario y la contraseña.
 3. (Opcional) Cargue datos de prueba: `py datos_prueba.py`
-4. Inicie la aplicación: `py main.py`
+4. Inicie la aplicación de consola: `py main.py`
+5. O inicie la API REST: `py api.py` (http://localhost:4040/api lista todas las rutas)
 
 # Estructura (arquitectura en capas)
 
     main.py              Punto de entrada: abre la conexión y muestra el menú principal
+    api.py               Punto de entrada de la API REST (Flask) en el puerto 4040
     menus.py             Define el menú de cada entidad (campos, columnas, opciones extra)
     crud.py              Motor genérico de menús: listar, buscar, registrar, actualizar, eliminar
     datos_prueba.py      Carga datos de ejemplo
@@ -27,6 +29,7 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
     Entidades/           Una clase por tabla, solo con atributos y Get/Set
     Repositorios/        Acceso a datos: llaman a los procedimientos almacenados (proc_*)
     Aplicaciones/        Reglas de negocio: validan y delegan en el repositorio
+    Controladores/       API REST: un Blueprint de Flask por entidad que llama a Aplicaciones
     Utilidades/
         Configuracion.py   Lee el .env y arma la cadena de conexión
         Conexion.py        Conexión ODBC compartida (openConnection / call / closeConnection)
@@ -74,6 +77,40 @@ de datos llegan como `ErrorBD` con un mensaje legible.
 3. `Repositorios/NuevaRepositorio.py`: llama a los procedimientos y construye la entidad.
 4. `Aplicaciones/NuevaAplicacion.py`: valida y delega en el repositorio.
 5. `menus.py`: defina su `Entidad(...)` (columnas y campos) y agréguela a `MENU_PRINCIPAL`.
+
+# API REST (Controladores)
+
+Documentación interactiva (Swagger UI): http://localhost:4040/api/docs — la especificación OpenAPI
+se genera sola desde los controladores en http://localhost:4040/api/openapi.json.
+
+`Controladores/ControladorBase.py` registra para cada entidad las rutas CRUD:
+
+| Método   | Ruta                   | Llama a                           |
+|----------|------------------------|-----------------------------------|
+| `GET`    | `/api/<entidad>`       | `Consultar()`                     |
+| `GET`    | `/api/<entidad>/<id>`  | `BuscarPorId(id)`                 |
+| `POST`   | `/api/<entidad>`       | `Insertar(entidad)` (cuerpo JSON) |
+| `PUT`    | `/api/<entidad>/<id>`  | `Actualizar(entidad)` (parcial)   |
+| `DELETE` | `/api/<entidad>/<id>`  | `Eliminar(id)`                    |
+
+Entidades: `roles`, `usuarios`, `barberias`, `barberos`, `horarios`, `bloqueos`, `servicios`,
+`servicios-barbero`, `citas`, `servicios-cita`, `productos`, `ventas`, `detalle-ventas`,
+`proveedores`, `compras`.
+
+- Listados que dependen de otro registro exigen un parámetro: `horarios`, `bloqueos` y
+  `servicios-barbero` → `?barber_id=1`; `servicios-cita` → `?appointment_id=1`;
+  `detalle-ventas` → `?product_sale_id=1`.
+- Rutas extra: `GET /api/citas/cliente/<id>`, `GET /api/citas/barbero/<id>`,
+  `PATCH /api/citas/<id>/estado` (`{"status": "Confirmed"}`), `GET /api/productos/disponibles`,
+  `GET /api/productos/stock-bajo`.
+- Usuarios: se envía `password` (mín. 6 caracteres) y se guarda su hash; `password_hash` nunca se devuelve.
+- Formatos: fechas `AAAA-MM-DD`, horas `HH:MM`, fecha y hora `AAAA-MM-DD HH:MM`.
+- Respuestas: `{"Respuesta": ...}` o `{"Error": "..."}` con código 400 (datos inválidos),
+  404 (no existe), 409 (error de base de datos) o 500.
+
+Ejemplo:
+
+    curl -X POST http://localhost:4040/api/roles -H "Content-Type: application/json" -d "{\"name\": \"Gerente\"}"
 
 # Usar las capas directamente (sin menú)
 

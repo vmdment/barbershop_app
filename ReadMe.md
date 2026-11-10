@@ -16,6 +16,9 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
 4. Inicie la aplicación de consola: `py main.py`
 5. O inicie la API REST: `py api.py` (http://localhost:4040/api lista todas las rutas)
 
+La aplicación web es un proyecto aparte (Front) que consume esta API. Los orígenes desde los que
+puede llamarla se configuran con `CORS_ORIGENES` en el `.env` (por defecto http://localhost:5500).
+
 # Estructura (arquitectura en capas)
 
     main.py              Punto de entrada: abre la conexión y muestra el menú principal

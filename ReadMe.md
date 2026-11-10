@@ -14,12 +14,14 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
 2. Copie `.env.example` como `.env` y ajuste el driver ODBC, el usuario y la contraseña.
 3. (Opcional) Cargue datos de prueba: `py datos_prueba.py`
 4. Inicie la aplicación de consola: `py main.py`
-5. O inicie la API REST: `py api.py` (http://localhost:4040/api lista todas las rutas)
+5. O inicie la aplicación web y la API REST: `py api.py`
+   - Aplicación web: http://localhost:4040
+   - API: http://localhost:4040/api (lista todas las rutas)
 
 # Estructura (arquitectura en capas)
 
     main.py              Punto de entrada: abre la conexión y muestra el menú principal
-    api.py               Punto de entrada de la API REST (Flask) en el puerto 4040
+    api.py               Punto de entrada de la aplicación web y la API REST (Flask) en el puerto 4040
     menus.py             Define el menú de cada entidad (campos, columnas, opciones extra)
     crud.py              Motor genérico de menús: listar, buscar, registrar, actualizar, eliminar
     datos_prueba.py      Carga datos de ejemplo
@@ -30,6 +32,7 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
     Repositorios/        Acceso a datos: llaman a los procedimientos almacenados (proc_*)
     Aplicaciones/        Reglas de negocio: validan y delegan en el repositorio
     Controladores/       API REST: un Blueprint de Flask por entidad que llama a Aplicaciones
+    Front/               Aplicación web (HTML, CSS y JavaScript sin dependencias) que usa la API
     Utilidades/
         Configuracion.py   Lee el .env y arma la cadena de conexión
         Conexion.py        Conexión ODBC compartida (openConnection / call / closeConnection)
@@ -111,6 +114,20 @@ Entidades: `roles`, `usuarios`, `barberias`, `barberos`, `horarios`, `bloqueos`,
 Ejemplo:
 
     curl -X POST http://localhost:4040/api/roles -H "Content-Type: application/json" -d "{\"name\": \"Gerente\"}"
+
+# Aplicación web (Front)
+
+Se abre en http://localhost:4040 con `py api.py`. No necesita instalar nada más ni compilar.
+
+    Front/index.html        Estructura de la página (menú lateral y zona de contenido)
+    Front/css/estilos.css   Estilos (tema claro y oscuro automático, adaptable a celular)
+    Front/js/entidades.js   Definición de cada entidad: columnas, campos y listas relacionadas
+    Front/js/formulario.js  Formulario genérico para registrar y editar
+    Front/js/tabla.js       Tabla con búsqueda y orden por columna
+    Front/js/app.js         Menú, inicio (resumen del día) y vistas de cada entidad
+    Front/js/api.js         Llamadas a la API REST
+
+Para agregar una entidad nueva a la web, defínala en `ENTIDADES` y en `MENU` de `entidades.js`.
 
 # Usar las capas directamente (sin menú)
 

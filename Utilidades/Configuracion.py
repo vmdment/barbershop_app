@@ -26,6 +26,14 @@ class Configuracion:
         return valores
 
     @staticmethod
+    def Valor(clave: str, defecto: str = "", ruta: Path = ARCHIVO_ENV) -> str:
+        """Devuelve una variable del entorno del sistema o, si no está, del archivo .env."""
+        if clave in os.environ:
+            return os.environ[clave]
+        archivo = Configuracion.LeerEnv(ruta) if ruta.exists() else {}
+        return archivo.get(clave, defecto)
+
+    @staticmethod
     def StringConexion(ruta: Path = ARCHIVO_ENV) -> str:
         """Arma la cadena de conexión con las variables DB_* del archivo .env.
         Las variables de entorno del sistema tienen prioridad sobre el archivo."""

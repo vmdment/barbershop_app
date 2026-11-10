@@ -1,4 +1,4 @@
-# Barbershop App
+# Barbershop - Back (API REST y consola)
 
 Aplicación de consola en Python para administrar una barbería (usuarios, barberos, horarios, citas,
 servicios, ventas, inventario y compras) sobre MySQL, usando procedimientos almacenados vía ODBC.
@@ -15,6 +15,9 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
 3. (Opcional) Cargue datos de prueba: `py datos_prueba.py`
 4. Inicie la aplicación de consola: `py main.py`
 5. O inicie la API REST: `py api.py` (http://localhost:4040/api lista todas las rutas)
+
+La aplicación web es un proyecto aparte (`barbershop_front`, en la carpeta vecina) que consume esta API. Los orígenes desde los que
+puede llamarla se configuran con `CORS_ORIGENES` en el `.env` (por defecto http://localhost:5500).
 
 # Estructura (arquitectura en capas)
 

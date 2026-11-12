@@ -39,13 +39,11 @@ def cargar():
     clave = hashear_password("clave123")
 
     # 1. Roles (reutiliza los que ya existan)
-    r_admin, r_barbero, r_cliente, r_asistente = (rol("Administrador"), rol("Barbero"),
-                                                   rol("Cliente"), rol("Asistente"))
+    r_admin, r_barbero, r_cliente = rol("Administrador"), rol("Barbero"), rol("Cliente")
 
     # 2. Usuarios
     laura = call("proc_insert_user", r_admin, "Laura Gómez", "laura.gomez@barberia.com", clave, "3104567890")
     andres = call("proc_insert_user", r_admin, "Andrés Ruiz", "andres.ruiz@barberia.com", clave, "3112345678")
-    sofia = call("proc_insert_user", r_asistente, "Sofía Vargas", "sofia.vargas@barberia.com", clave, "3127654321")
     u_carlos = call("proc_insert_user", r_barbero, "Carlos Pérez", "carlos.perez@barberia.com", clave, "3001112233")
     u_julian = call("proc_insert_user", r_barbero, "Julián Martínez", "julian.martinez@barberia.com", clave, "3002223344")
     u_santiago = call("proc_insert_user", r_barbero, "Santiago Ramírez", "santiago.ramirez@barberia.com", clave, "3003334455")
@@ -131,10 +129,10 @@ def cargar():
     call("proc_insert_product", clasico, None, "Talco mentolado", None, D("12000"), 3, 5)
 
     # 12-13. Ventas con su detalle (descuentan stock y calculan total)
-    venta1 = call("proc_insert_product_sale", maria, sofia, "Card")
+    venta1 = call("proc_insert_product_sale", maria, laura, "Card")
     call("proc_insert_product_sale_detail", venta1, cera, 1, None)
     call("proc_insert_product_sale_detail", venta1, shampoo, 1, None)
-    venta2 = call("proc_insert_product_sale", None, sofia, "Cash")
+    venta2 = call("proc_insert_product_sale", None, u_carlos, "Cash")
     call("proc_insert_product_sale_detail", venta2, pomada, 2, None)
     venta3 = call("proc_insert_product_sale", diego, andres, "Transfer")
     call("proc_insert_product_sale_detail", venta3, aceite, 1, D("32000"))

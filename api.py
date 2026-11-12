@@ -7,16 +7,16 @@ import atexit
 
 import flask
 
-from Controladores import (BarberiasControlador, BarberosControlador, BloqueosControlador, CitasControlador,
-                           ComprasControlador, DetalleVentasControlador, HorariosControlador,
+from Controladores import (AccesosControlador, AutenticacionControlador, BarberiasControlador, BarberosControlador,
+                           BloqueosControlador, CitasControlador, ComprasControlador, DetalleVentasControlador, HorariosControlador,
                            ProductosControlador, ProveedoresControlador, RolesControlador,
                            ServiciosBarberoControlador, ServiciosCitaControlador, ServiciosControlador,
                            SwaggerControlador, UsuariosControlador, VentasControlador)
 from Utilidades import Conexion, Configuracion
 
 CONTROLADORES = [
-    RolesControlador, UsuariosControlador, BarberiasControlador, BarberosControlador,
-    HorariosControlador, BloqueosControlador, ServiciosControlador, ServiciosBarberoControlador,
+    AutenticacionControlador, AccesosControlador, RolesControlador, UsuariosControlador, BarberiasControlador,
+    BarberosControlador, HorariosControlador, BloqueosControlador, ServiciosControlador, ServiciosBarberoControlador,
     CitasControlador, ServiciosCitaControlador, ProductosControlador, VentasControlador,
     DetalleVentasControlador, ProveedoresControlador, ComprasControlador,
 ]
@@ -26,6 +26,7 @@ def CrearApp() -> flask.Flask:
     app = flask.Flask(__name__)
     app.json.ensure_ascii = False   # tildes y ñ legibles en las respuestas
     app.json.sort_keys = False      # respeta el orden de los campos de cada entidad
+    app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024   # cuerpo máximo: foto de 2 MB en base64
 
     # CORS: la aplicación web (proyecto Front) se sirve desde otro origen y llama a esta API
     permitidos = Configuracion.Configuracion.Valor("CORS_ORIGENES", "http://localhost:5500")
@@ -37,7 +38,7 @@ def CrearApp() -> flask.Flask:
         if origen and ("*" in origenes or origen in origenes):
             respuesta.headers["Access-Control-Allow-Origin"] = "*" if "*" in origenes else origen
             respuesta.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            respuesta.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            respuesta.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             respuesta.vary.add("Origin")
         return respuesta
 
@@ -57,6 +58,10 @@ def CrearApp() -> flask.Flask:
     @app.errorhandler(404)
     def NoEncontrada(_):
         return flask.jsonify({"Error": "Ruta no encontrada. Consulte GET /api."}), 404
+
+    @app.errorhandler(413)
+    def MuyGrande(_):
+        return flask.jsonify({"Error": "La petición es demasiado grande (la foto puede pesar hasta 2 MB)."}), 413
 
     @app.errorhandler(405)
     def MetodoNoPermitido(_):

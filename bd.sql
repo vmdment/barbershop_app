@@ -1,5 +1,5 @@
 -- ============================================================
--- DATABASE CREATION SCRIPT: BARBERSHOP (15 TABLES)
+-- DATABASE CREATION SCRIPT: BARBERSHOP (17 TABLES)
 -- SINGULAR ENTITIES & ENGLISH ATTRIBUTES
 -- ============================================================
 
@@ -184,7 +184,32 @@ CREATE TABLE IF NOT EXISTS supplier_purchase (
     CONSTRAINT fk_sp_barbershop FOREIGN KEY (barbershop_id) REFERENCES barbershop(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- 16. User Photo (foto de perfil; tabla aparte para no alterar user en bases ya creadas)
+CREATE TABLE IF NOT EXISTS user_photo (
+    user_id INT PRIMARY KEY,
+    content_type VARCHAR(30) NOT NULL,
+    content MEDIUMBLOB NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_photo_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- 17. Access Log (registro de accesos: inicios de sesión, intentos fallidos, registros y salidas)
+CREATE TABLE IF NOT EXISTS access_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NULL,
+    email VARCHAR(100) NOT NULL,
+    event ENUM('Login', 'Failed', 'Register', 'Logout') NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(255) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_access_user (user_id, created_at),
+    CONSTRAINT fk_access_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 USE barbershop_db;
+
+-- Roles del inicio de sesión (la API reconoce estos nombres; ver Controladores/Permisos.py)
+INSERT IGNORE INTO role (name) VALUES ('Administrador'), ('Barbero'), ('Cliente');
 
 -- ============================================================
 -- STORED PROCEDURES
@@ -297,6 +322,86 @@ BEGIN
     FROM user u
     INNER JOIN role r ON u.role_id = r.id
     WHERE u.id = p_id;
+END //
+
+-- Inicio de sesión: es el único procedimiento que devuelve el hash de la contraseña
+DROP PROCEDURE IF EXISTS proc_select_user_by_email //
+CREATE PROCEDURE proc_select_user_by_email(
+    IN p_email VARCHAR(100)
+)
+BEGIN
+    SELECT u.id, u.role_id, r.name AS role_name, u.full_name, u.email, u.password_hash, u.phone, u.created_at
+    FROM user u
+    INNER JOIN role r ON u.role_id = r.id
+    WHERE u.email = TRIM(p_email);
+END //
+
+-- Foto de perfil
+DROP PROCEDURE IF EXISTS proc_select_user_photo //
+CREATE PROCEDURE proc_select_user_photo(
+    IN p_user_id INT
+)
+BEGIN
+    SELECT user_id, content_type, content, updated_at FROM user_photo WHERE user_id = p_user_id;
+END //
+
+DROP PROCEDURE IF EXISTS proc_save_user_photo //
+CREATE PROCEDURE proc_save_user_photo(
+    IN p_user_id INT,
+    IN p_content_type VARCHAR(30),
+    IN p_content MEDIUMBLOB
+)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM user WHERE id = p_user_id) THEN
+        CALL proc_raise('El usuario indicado no existe.');
+    END IF;
+    IF IFNULL(p_content_type, '') NOT IN ('image/jpeg', 'image/png', 'image/webp') THEN
+        CALL proc_raise('La foto debe ser JPG, PNG o WEBP.');
+    END IF;
+    IF p_content IS NULL OR LENGTH(p_content) = 0 THEN
+        CALL proc_raise('La foto está vacía.');
+    END IF;
+    INSERT INTO user_photo (user_id, content_type, content) VALUES (p_user_id, p_content_type, p_content)
+    ON DUPLICATE KEY UPDATE content_type = p_content_type, content = p_content;
+END //
+
+DROP PROCEDURE IF EXISTS proc_delete_user_photo //
+CREATE PROCEDURE proc_delete_user_photo(
+    IN p_user_id INT
+)
+BEGIN
+    DELETE FROM user_photo WHERE user_id = p_user_id;
+END //
+
+-- Registro de accesos
+DROP PROCEDURE IF EXISTS proc_insert_access_log //
+CREATE PROCEDURE proc_insert_access_log(
+    IN p_user_id INT,
+    IN p_email VARCHAR(100),
+    IN p_event VARCHAR(10),
+    IN p_ip_address VARCHAR(45),
+    IN p_user_agent VARCHAR(255)
+)
+BEGIN
+    INSERT INTO access_log (user_id, email, event, ip_address, user_agent)
+    VALUES (p_user_id, LEFT(IFNULL(p_email, ''), 100), p_event, LEFT(p_ip_address, 45), LEFT(p_user_agent, 255));
+END //
+
+-- p_user_id NULL = todos; p_limit = cuántos (los más recientes primero)
+DROP PROCEDURE IF EXISTS proc_select_access_log //
+CREATE PROCEDURE proc_select_access_log(
+    IN p_user_id INT,
+    IN p_limit INT
+)
+BEGIN
+    SELECT a.id, a.user_id, u.full_name, r.name AS role_name, a.email, a.event, a.ip_address,
+           a.user_agent, a.created_at
+    FROM access_log a
+    LEFT JOIN user u ON a.user_id = u.id
+    LEFT JOIN role r ON u.role_id = r.id
+    WHERE p_user_id IS NULL OR a.user_id = p_user_id
+    ORDER BY a.created_at DESC, a.id DESC
+    LIMIT p_limit;
 END //
 
 DROP PROCEDURE IF EXISTS proc_validate_user //
@@ -532,6 +637,20 @@ BEGIN
     INNER JOIN user u ON b.user_id = u.id
     LEFT JOIN barbershop bs ON b.barbershop_id = bs.id
     WHERE b.id = p_id;
+END //
+
+-- Perfil de barbero de un usuario (inicio de sesión con rol Barbero)
+DROP PROCEDURE IF EXISTS proc_select_barber_by_user //
+CREATE PROCEDURE proc_select_barber_by_user(
+    IN p_user_id INT
+)
+BEGIN
+    SELECT b.id, b.user_id, u.full_name AS barber_name, b.barbershop_id, bs.name AS barbershop_name,
+           b.provides_home_service, b.provides_shop_service, b.commission_rate, b.is_active
+    FROM barber b
+    INNER JOIN user u ON b.user_id = u.id
+    LEFT JOIN barbershop bs ON b.barbershop_id = bs.id
+    WHERE b.user_id = p_user_id;
 END //
 
 DROP PROCEDURE IF EXISTS proc_validate_barber //

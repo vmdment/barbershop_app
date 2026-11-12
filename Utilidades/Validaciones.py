@@ -7,6 +7,7 @@ Todas las funciones repiten la pregunta hasta recibir un valor válido.
 """
 import getpass
 import hashlib
+import hmac
 import os
 import re
 from datetime import date, datetime, time
@@ -220,3 +221,15 @@ def hashear_password(texto: str) -> str:
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", texto.encode("utf-8"), salt, 100_000)
     return f"pbkdf2_sha256${salt.hex()}${digest.hex()}"
+
+
+def verificar_password(texto: str, guardado: str | None) -> bool:
+    """Compara una contraseña en texto plano con el hash generado por hashear_password()."""
+    try:
+        algoritmo, salt, digest = (guardado or "").split("$")
+        if algoritmo != "pbkdf2_sha256":
+            return False
+        calculado = hashlib.pbkdf2_hmac("sha256", texto.encode("utf-8"), bytes.fromhex(salt), 100_000)
+        return hmac.compare_digest(calculado.hex(), digest)
+    except ValueError:
+        return False

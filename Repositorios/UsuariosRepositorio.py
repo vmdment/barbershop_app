@@ -14,6 +14,28 @@ class UsuariosRepositorio:
             return None
         return self.__Construir(filas[0])
 
+    def BuscarPorEmail(self, email: str) -> Usuarios.Usuarios | None:
+        """Incluye password_hash: solo para el inicio de sesión."""
+        filas: list = Conexion.conexion.call("proc_select_user_by_email", (email,))
+        if not filas:
+            return None
+        return self.__Construir(filas[0])
+
+    def BuscarFoto(self, user_id: int) -> dict | None:
+        """{"content_type", "content" (bytes), "updated_at"} o None si no tiene foto."""
+        filas: list = Conexion.conexion.call("proc_select_user_photo", (user_id,))
+        if not filas:
+            return None
+        fila = filas[0]
+        return {"content_type": fila.get("content_type"), "content": bytes(fila.get("content")),
+                "updated_at": fila.get("updated_at")}
+
+    def GuardarFoto(self, user_id: int, content_type: str, content: bytes) -> None:
+        Conexion.conexion.call("proc_save_user_photo", (user_id, content_type, content))
+
+    def EliminarFoto(self, user_id: int) -> None:
+        Conexion.conexion.call("proc_delete_user_photo", (user_id,))
+
     def Insertar(self, entidad: Usuarios.Usuarios) -> Usuarios.Usuarios:
         filas: list = Conexion.conexion.call(
             "proc_insert_user",

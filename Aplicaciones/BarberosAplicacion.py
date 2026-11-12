@@ -15,6 +15,9 @@ class BarberosAplicacion:
     def BuscarPorId(self, id: int) -> Barberos.Barberos | None:
         return self.repositorio.BuscarPorId(id)
 
+    def BuscarPorUsuario(self, user_id: int) -> Barberos.Barberos | None:
+        return self.repositorio.BuscarPorUsuario(user_id)
+
     def Insertar(self, entidad: Barberos.Barberos) -> Barberos.Barberos:
         self.Validar(entidad)
         return self.repositorio.Insertar(entidad)

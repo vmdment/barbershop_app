@@ -14,6 +14,12 @@ class BarberosRepositorio:
             return None
         return self.__Construir(filas[0])
 
+    def BuscarPorUsuario(self, user_id: int) -> Barberos.Barberos | None:
+        filas: list = Conexion.conexion.call("proc_select_barber_by_user", (user_id,))
+        if not filas:
+            return None
+        return self.__Construir(filas[0])
+
     def Insertar(self, entidad: Barberos.Barberos) -> Barberos.Barberos:
         filas: list = Conexion.conexion.call(
             "proc_insert_barber",

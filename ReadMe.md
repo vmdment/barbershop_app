@@ -11,8 +11,10 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
     py -m pip install pyodbc flask
 
 1. Ejecute `bd.sql` en MySQL (crea `barbershop_db`, las 15 tablas y los procedimientos almacenados).
-2. Copie `.env.example` como `.env` y ajuste el driver ODBC, el usuario y la contraseña.
-3. (Opcional) Cargue datos de prueba: `py datos_prueba.py`
+2. Copie `.env.example` como `.env` y ajuste el driver ODBC, el usuario y la contraseña, y ponga una
+   `CLAVE_SECRETA` propia (firma los tokens de inicio de sesión).
+3. (Opcional) Cargue datos de prueba: `py datos_prueba.py` (contraseña de todos: `clave123`)
+   o cree el primer administrador: `py crear_admin.py`
 4. Inicie la aplicación de consola: `py main.py`
 5. O inicie la API REST: `py api.py` (http://localhost:4040/api lista todas las rutas)
 
@@ -26,6 +28,7 @@ puede llamarla se configuran con `CORS_ORIGENES` en el `.env` (por defecto http:
     menus.py             Define el menú de cada entidad (campos, columnas, opciones extra)
     crud.py              Motor genérico de menús: listar, buscar, registrar, actualizar, eliminar
     datos_prueba.py      Carga datos de ejemplo
+    crear_admin.py       Crea el primer usuario Administrador (para iniciar sesión en la API)
     bd.sql               Script de la base de datos (tablas + procedimientos almacenados)
     .env.example         Plantilla de configuración de la base de datos (copiar como .env)
 
@@ -111,9 +114,64 @@ Entidades: `roles`, `usuarios`, `barberias`, `barberos`, `horarios`, `bloqueos`,
 - Respuestas: `{"Respuesta": ...}` o `{"Error": "..."}` con código 400 (datos inválidos),
   404 (no existe), 409 (error de base de datos) o 500.
 
+- Además: 401 (sin sesión o token vencido) y 403 (el rol no tiene permiso o el registro no es suyo).
+
+## Inicio de sesión y roles
+
+`POST /api/auth/login` con `{"email", "password"}` devuelve `{"token", "expira_en_segundos", "usuario"}`.
+Todas las demás rutas (salvo `GET /api`, `/api/docs`, `/api/openapi.json` y `POST /api/auth/registro`)
+exigen la cabecera `Authorization: Bearer <token>`. En Swagger, pegue el token en **Authorize**.
+
+- `POST /api/auth/registro` (`full_name`, `email`, `phone`, `password`): crea una cuenta, siempre
+  con rol Cliente, y devuelve la sesión iniciada.
+- `GET /api/auth/perfil`: perfil de la sesión (datos, rol, barbería, `tiene_foto`). `PUT /api/auth/perfil`
+  cambia nombre y teléfono, o la contraseña enviando `password_actual` y `password_nueva`.
+- Foto de perfil: `PUT /api/auth/perfil/foto` con `{"imagen": "data:image/png;base64,..."}` (JPG, PNG o
+  WEBP de hasta 2 MB), `DELETE /api/auth/perfil/foto`, y `GET /api/usuarios/<id>/foto` para verla.
+- Registro de accesos (tabla `access_log`): cada inicio de sesión, intento fallido, cuenta nueva y
+  `POST /api/auth/salir` queda con fecha, IP y navegador. `GET /api/accesos` (administrador: los suyos,
+  los de sus barberos, los clientes y los correos inexistentes) y `GET /api/accesos/mios` (cada usuario).
+- Cerrar sesión = borrar el token en el cliente. La sesión dura `SESION_HORAS` (8 por defecto).
+- El rol se lee de la base en cada petición: cambiar el rol o eliminar al usuario aplica de inmediato.
+
+Los roles se reconocen por el nombre en la tabla `role` (sin distinguir mayúsculas): `Administrador`,
+`Barbero` y `Cliente` (también `Usuario`). Un usuario con otro rol no puede iniciar sesión, y un
+Barbero debe tener su registro en `barberos` y estar activo. Las reglas están en `Controladores/Permisos.py`
+y en cada controlador.
+
+**Alcance del administrador:** cada administrador maneja solo las barberías donde es `manager_id`
+(puede tener varias) y lo que depende de ellas: sus barberos (y sus horarios, bloqueos y servicios),
+las citas de esos barberos, los productos y compras de sus barberías o barberos, y las ventas que hizo
+él o sus barberos. Los listados le llegan ya filtrados y lo ajeno responde 403. Al registrar una
+barbería queda como su administrador y no puede pasársela a otro. Los barberos sin barbería (solo a
+domicilio) los ve cualquier administrador para poder asignarlos. Usuarios, roles, servicios y
+proveedores son catálogos comunes.
+
+| Recurso | Administrador | Barbero | Cliente |
+|---|---|---|---|
+| `roles`, `usuarios`, `proveedores` | todo | — | — |
+| `usuarios/clientes` (id, nombre y correo) | ver | ver (para la venta) | — |
+| `compras` | las de sus barberías | — | — |
+| `barberias` | las suyas (registrar, editar, eliminar) | ver todas | ver todas |
+| `barberos`, `horarios`, `servicios-barbero` | los de sus barberías | ver | ver |
+| `servicios` | todo | ver | ver |
+| `bloqueos` | los de sus barberías | ver | — |
+| `productos` | los de sus barberías | ver (para vender) | — |
+| `citas` | las de sus barberos | ver las suyas, aceptar (`Confirmed`), cancelar, completar y reprogramar | solicitar a su nombre eligiendo barbero, ver las suyas, reprogramar y cancelar |
+| `servicios-cita` | los de sus citas | los de sus citas, ajustar precio/duración | agregar o quitar en sus citas (el precio lo pone la base) |
+| `ventas` | las suyas y las de sus barberos | registrar (queda como vendedor, elige el cliente), ver y editar las suyas; no elimina | — |
+| `detalle-ventas` | el de esas ventas | el de sus ventas: agregar, cambiar cantidad o quitar; no cambia el precio | — |
+
+Reprogramar = cambiar solo `appointment_date`, `start_time` y `end_time`. El barbero no crea citas ni
+maneja su horario o sus bloqueos: eso lo hace el administrador.
+
+- `GET /api/citas/mias`: las citas de la sesión (cliente: las que pidió; barbero: las que atiende).
+- La comisión de los barberos (`commission_rate`) solo la ve el administrador.
+
 Ejemplo:
 
-    curl -X POST http://localhost:4040/api/roles -H "Content-Type: application/json" -d "{\"name\": \"Gerente\"}"
+    curl -X POST http://localhost:4040/api/auth/login -H "Content-Type: application/json" -d "{\"email\": \"laura.gomez@barberia.com\", \"password\": \"clave123\"}"
+    curl http://localhost:4040/api/citas/mias -H "Authorization: Bearer <token>"
 
 # Usar las capas directamente (sin menú)
 

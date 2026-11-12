@@ -14,6 +14,13 @@ class UsuariosRepositorio:
             return None
         return self.__Construir(filas[0])
 
+    def BuscarPorEmail(self, email: str) -> Usuarios.Usuarios | None:
+        """Incluye password_hash: solo para el inicio de sesión."""
+        filas: list = Conexion.conexion.call("proc_select_user_by_email", (email,))
+        if not filas:
+            return None
+        return self.__Construir(filas[0])
+
     def Insertar(self, entidad: Usuarios.Usuarios) -> Usuarios.Usuarios:
         filas: list = Conexion.conexion.call(
             "proc_insert_user",

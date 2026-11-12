@@ -186,6 +186,9 @@ CREATE TABLE IF NOT EXISTS supplier_purchase (
 
 USE barbershop_db;
 
+-- Roles del inicio de sesión (la API reconoce estos nombres; ver Controladores/Permisos.py)
+INSERT IGNORE INTO role (name) VALUES ('Administrador'), ('Barbero'), ('Cliente');
+
 -- ============================================================
 -- STORED PROCEDURES
 -- Cada tabla tiene: listar, buscar por id, insertar, actualizar
@@ -297,6 +300,18 @@ BEGIN
     FROM user u
     INNER JOIN role r ON u.role_id = r.id
     WHERE u.id = p_id;
+END //
+
+-- Inicio de sesión: es el único procedimiento que devuelve el hash de la contraseña
+DROP PROCEDURE IF EXISTS proc_select_user_by_email //
+CREATE PROCEDURE proc_select_user_by_email(
+    IN p_email VARCHAR(100)
+)
+BEGIN
+    SELECT u.id, u.role_id, r.name AS role_name, u.full_name, u.email, u.password_hash, u.phone, u.created_at
+    FROM user u
+    INNER JOIN role r ON u.role_id = r.id
+    WHERE u.email = TRIM(p_email);
 END //
 
 DROP PROCEDURE IF EXISTS proc_validate_user //
@@ -532,6 +547,20 @@ BEGIN
     INNER JOIN user u ON b.user_id = u.id
     LEFT JOIN barbershop bs ON b.barbershop_id = bs.id
     WHERE b.id = p_id;
+END //
+
+-- Perfil de barbero de un usuario (inicio de sesión con rol Barbero)
+DROP PROCEDURE IF EXISTS proc_select_barber_by_user //
+CREATE PROCEDURE proc_select_barber_by_user(
+    IN p_user_id INT
+)
+BEGIN
+    SELECT b.id, b.user_id, u.full_name AS barber_name, b.barbershop_id, bs.name AS barbershop_name,
+           b.provides_home_service, b.provides_shop_service, b.commission_rate, b.is_active
+    FROM barber b
+    INNER JOIN user u ON b.user_id = u.id
+    LEFT JOIN barbershop bs ON b.barbershop_id = bs.id
+    WHERE b.user_id = p_user_id;
 END //
 
 DROP PROCEDURE IF EXISTS proc_validate_barber //

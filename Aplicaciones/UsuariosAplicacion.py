@@ -15,6 +15,9 @@ class UsuariosAplicacion:
     def BuscarPorId(self, id: int) -> Usuarios.Usuarios | None:
         return self.repositorio.BuscarPorId(id)
 
+    def BuscarPorEmail(self, email: str) -> Usuarios.Usuarios | None:
+        return self.repositorio.BuscarPorEmail(email)
+
     def Insertar(self, entidad: Usuarios.Usuarios) -> Usuarios.Usuarios:
         self.Validar(entidad)
         return self.repositorio.Insertar(entidad)

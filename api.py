@@ -7,16 +7,16 @@ import atexit
 
 import flask
 
-from Controladores import (BarberiasControlador, BarberosControlador, BloqueosControlador, CitasControlador,
-                           ComprasControlador, DetalleVentasControlador, HorariosControlador,
+from Controladores import (AutenticacionControlador, BarberiasControlador, BarberosControlador,
+                           BloqueosControlador, CitasControlador, ComprasControlador, DetalleVentasControlador, HorariosControlador,
                            ProductosControlador, ProveedoresControlador, RolesControlador,
                            ServiciosBarberoControlador, ServiciosCitaControlador, ServiciosControlador,
                            SwaggerControlador, UsuariosControlador, VentasControlador)
 from Utilidades import Conexion, Configuracion
 
 CONTROLADORES = [
-    RolesControlador, UsuariosControlador, BarberiasControlador, BarberosControlador,
-    HorariosControlador, BloqueosControlador, ServiciosControlador, ServiciosBarberoControlador,
+    AutenticacionControlador, RolesControlador, UsuariosControlador, BarberiasControlador,
+    BarberosControlador, HorariosControlador, BloqueosControlador, ServiciosControlador, ServiciosBarberoControlador,
     CitasControlador, ServiciosCitaControlador, ProductosControlador, VentasControlador,
     DetalleVentasControlador, ProveedoresControlador, ComprasControlador,
 ]
@@ -37,7 +37,7 @@ def CrearApp() -> flask.Flask:
         if origen and ("*" in origenes or origen in origenes):
             respuesta.headers["Access-Control-Allow-Origin"] = "*" if "*" in origenes else origen
             respuesta.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            respuesta.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            respuesta.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             respuesta.vary.add("Origin")
         return respuesta
 

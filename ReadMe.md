@@ -11,8 +11,10 @@ Requiere Python 3.10 o superior y el driver ODBC de MySQL.
     py -m pip install pyodbc flask
 
 1. Ejecute `bd.sql` en MySQL (crea `barbershop_db`, las 15 tablas y los procedimientos almacenados).
-2. Copie `.env.example` como `.env` y ajuste el driver ODBC, el usuario y la contraseña.
-3. (Opcional) Cargue datos de prueba: `py datos_prueba.py`
+2. Copie `.env.example` como `.env` y ajuste el driver ODBC, el usuario y la contraseña, y ponga una
+   `CLAVE_SECRETA` propia (firma los tokens de inicio de sesión).
+3. (Opcional) Cargue datos de prueba: `py datos_prueba.py` (contraseña de todos: `clave123`)
+   o cree el primer administrador: `py crear_admin.py`
 4. Inicie la aplicación de consola: `py main.py`
 5. O inicie la API REST: `py api.py` (http://localhost:4040/api lista todas las rutas)
 
@@ -26,6 +28,7 @@ puede llamarla se configuran con `CORS_ORIGENES` en el `.env` (por defecto http:
     menus.py             Define el menú de cada entidad (campos, columnas, opciones extra)
     crud.py              Motor genérico de menús: listar, buscar, registrar, actualizar, eliminar
     datos_prueba.py      Carga datos de ejemplo
+    crear_admin.py       Crea el primer usuario Administrador (para iniciar sesión en la API)
     bd.sql               Script de la base de datos (tablas + procedimientos almacenados)
     .env.example         Plantilla de configuración de la base de datos (copiar como .env)
 
@@ -111,9 +114,43 @@ Entidades: `roles`, `usuarios`, `barberias`, `barberos`, `horarios`, `bloqueos`,
 - Respuestas: `{"Respuesta": ...}` o `{"Error": "..."}` con código 400 (datos inválidos),
   404 (no existe), 409 (error de base de datos) o 500.
 
+- Además: 401 (sin sesión o token vencido) y 403 (el rol no tiene permiso o el registro no es suyo).
+
+## Inicio de sesión y roles
+
+`POST /api/auth/login` con `{"email", "password"}` devuelve `{"token", "expira_en_segundos", "usuario"}`.
+Todas las demás rutas (salvo `GET /api`, `/api/docs`, `/api/openapi.json` y `POST /api/auth/registro`)
+exigen la cabecera `Authorization: Bearer <token>`. En Swagger, pegue el token en **Authorize**.
+
+- `POST /api/auth/registro` (`full_name`, `email`, `phone`, `password`): crea una cuenta, siempre
+  con rol Cliente, y devuelve la sesión iniciada.
+- `GET /api/auth/perfil`: datos de la sesión (`id`, `full_name`, `email`, `rol`, `barber_id`).
+- Cerrar sesión = borrar el token en el cliente. La sesión dura `SESION_HORAS` (8 por defecto).
+- El rol se lee de la base en cada petición: cambiar el rol o eliminar al usuario aplica de inmediato.
+
+Los roles se reconocen por el nombre en la tabla `role` (sin distinguir mayúsculas): `Administrador`,
+`Barbero` y `Cliente` (también `Usuario`). Un usuario con otro rol no puede iniciar sesión, y un
+Barbero debe tener su registro en `barberos` y estar activo. Las reglas están en `Controladores/Permisos.py`
+y en cada controlador.
+
+| Recurso | Administrador | Barbero | Cliente |
+|---|---|---|---|
+| `roles`, `usuarios`, `proveedores`, `compras` | todo | — | — |
+| `barberias`, `barberos`, `servicios`, `servicios-barbero`, `horarios` | todo | ver | ver |
+| `bloqueos` | todo | ver | — |
+| `productos` | todo | ver (para vender) | — |
+| `citas` | todo | ver las suyas, aceptar (`Confirmed`), cancelar, completar y reprogramar (solo `appointment_date`, `start_time`, `end_time`) | solicitar a su nombre eligiendo barbero, ver las suyas, cancelar |
+| `servicios-cita` | todo | los de sus citas, ajustar precio/duración | agregar o quitar en sus citas (el precio lo pone la base) |
+| `ventas` | todo | registrar (queda como vendedor), ver y editar las suyas | — |
+| `detalle-ventas` | todo | el de sus ventas | — |
+
+- `GET /api/citas/mias`: las citas de la sesión (cliente: las que pidió; barbero: las que atiende).
+- La comisión de los barberos (`commission_rate`) solo la ve el administrador.
+
 Ejemplo:
 
-    curl -X POST http://localhost:4040/api/roles -H "Content-Type: application/json" -d "{\"name\": \"Gerente\"}"
+    curl -X POST http://localhost:4040/api/auth/login -H "Content-Type: application/json" -d "{\"email\": \"laura.gomez@barberia.com\", \"password\": \"clave123\"}"
+    curl http://localhost:4040/api/citas/mias -H "Authorization: Bearer <token>"
 
 # Usar las capas directamente (sin menú)
 

@@ -71,7 +71,9 @@ def Operacion(controlador, ruta: dict) -> dict:
                     "description": f"ID requerido para listar ({p['nombre']})"}
                    for p in ruta["parametros"]]
 
-    if ruta["respuesta"] == "texto":
+    if isinstance(ruta["respuesta"], dict):
+        exito = ruta["respuesta"]
+    elif ruta["respuesta"] == "texto":
         exito = {"type": "string"}
     else:
         exito = {"type": "array", "items": ref} if ruta["lista"] else ref
@@ -81,17 +83,23 @@ def Operacion(controlador, ruta: dict) -> dict:
     operacion = {
         "tags": [controlador.nombre],
         "summary": ruta["resumen"],
+        "description": ("Pública: no requiere iniciar sesión." if ruta.get("roles") is None
+                        else "Roles: " + ", ".join(ruta["roles"])),
         "operationId": f"{controlador.nombre}_{ruta['metodo'].lower()}_{ruta['ruta']}",
         "parameters": parametros,
         "responses": {
             codigo: {"description": "Correcto",
                      "content": {"application/json": {"schema": Envolver(exito)}}},
             "400": {"description": "Datos inválidos o regla de negocio incumplida", **error},
+            "401": {"description": "Sin sesión, token inválido o vencido", **error},
+            "403": {"description": "El rol no tiene permiso o el registro no es suyo", **error},
             "404": {"description": "El registro no existe", **error},
             "409": {"description": "Error de la base de datos", **error},
             "500": {"description": "Error interno", **error},
         },
     }
+    if ruta.get("roles") is None:
+        operacion["security"] = []      # ruta pública
     if ruta["cuerpo"] is not None:
         esquema = ref if ruta["cuerpo"] == "entidad" else ruta["cuerpo"]
         operacion["requestBody"] = {"required": True, "content": {"application/json": {"schema": esquema}}}
@@ -114,12 +122,16 @@ def GenerarEspecificacion(controladores: list) -> dict:
             "description": "API REST de la barbería. Todas las respuestas tienen la forma "
                            "`{\"Respuesta\": ...}` o `{\"Error\": \"...\"}`. Fechas `AAAA-MM-DD`, "
                            "horas `HH:MM`, fecha y hora `AAAA-MM-DD HH:MM`. En `PUT` solo se envían "
-                           "los campos a cambiar.",
+                           "los campos a cambiar.\n\n**Inicio de sesión:** use `POST /api/auth/login`, "
+                           "copie el `token` y péguelo en el botón **Authorize**. Roles: Administrador "
+                           "(todo), Barbero (sus citas y ventas) y Cliente (pide y cancela sus citas).",
         },
         "servers": [{"url": "/"}],
         "tags": [{"name": c.nombre} for c in controladores],
         "paths": rutas,
-        "components": {"schemas": esquemas},
+        "security": [{"bearerAuth": []}],
+        "components": {"schemas": esquemas,
+                       "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}}},
     }
 
 

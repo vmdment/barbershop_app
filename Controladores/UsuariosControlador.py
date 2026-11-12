@@ -1,6 +1,8 @@
+import flask
+
 from Aplicaciones import UsuariosAplicacion
 from Controladores import Permisos
-from Controladores.ControladorBase import ControladorBase, ErrorPeticion, Respuesta
+from Controladores.ControladorBase import ControladorBase, ErrorPeticion, NoEncontrado, Respuesta
 from Entidades import Usuarios
 from Utilidades import Validaciones
 
@@ -23,6 +25,18 @@ class UsuariosControlador(ControladorBase):
                                "id": {"type": "integer"}, "full_name": {"type": "string"},
                                "email": {"type": "string"}}}},
                            roles=(Permisos.ADMIN, Permisos.BARBERO))
+        self.RegistrarRuta("/<int:id>/foto", "foto", self.Foto, "GET",
+                           "Foto de perfil del usuario (imagen; 404 si no tiene)",
+                           respuesta={"type": "string", "format": "binary"}, roles=Permisos.TODOS)
+
+    def Foto(self, id: int):
+        """Cualquier usuario con sesión ve las fotos (ej. el cliente ve la del barbero que elige)."""
+        foto = self.aplicacion.BuscarFoto(id)
+        if foto is None:
+            raise NoEncontrado("El usuario no tiene foto de perfil.")
+        respuesta = flask.Response(foto["content"], mimetype=foto["content_type"])
+        respuesta.headers["Cache-Control"] = "private, no-cache"
+        return respuesta
 
     def ConsultarClientes(self):
         return Respuesta([{"id": u.GetId(), "full_name": u.GetFullName(), "email": u.GetEmail()}

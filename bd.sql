@@ -1,5 +1,5 @@
 -- ============================================================
--- DATABASE CREATION SCRIPT: BARBERSHOP (15 TABLES)
+-- DATABASE CREATION SCRIPT: BARBERSHOP (16 TABLES)
 -- SINGULAR ENTITIES & ENGLISH ATTRIBUTES
 -- ============================================================
 
@@ -184,6 +184,15 @@ CREATE TABLE IF NOT EXISTS supplier_purchase (
     CONSTRAINT fk_sp_barbershop FOREIGN KEY (barbershop_id) REFERENCES barbershop(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- 16. User Photo (foto de perfil; tabla aparte para no alterar user en bases ya creadas)
+CREATE TABLE IF NOT EXISTS user_photo (
+    user_id INT PRIMARY KEY,
+    content_type VARCHAR(30) NOT NULL,
+    content MEDIUMBLOB NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_photo_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 USE barbershop_db;
 
 -- Roles del inicio de sesión (la API reconoce estos nombres; ver Controladores/Permisos.py)
@@ -312,6 +321,43 @@ BEGIN
     FROM user u
     INNER JOIN role r ON u.role_id = r.id
     WHERE u.email = TRIM(p_email);
+END //
+
+-- Foto de perfil
+DROP PROCEDURE IF EXISTS proc_select_user_photo //
+CREATE PROCEDURE proc_select_user_photo(
+    IN p_user_id INT
+)
+BEGIN
+    SELECT user_id, content_type, content, updated_at FROM user_photo WHERE user_id = p_user_id;
+END //
+
+DROP PROCEDURE IF EXISTS proc_save_user_photo //
+CREATE PROCEDURE proc_save_user_photo(
+    IN p_user_id INT,
+    IN p_content_type VARCHAR(30),
+    IN p_content MEDIUMBLOB
+)
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM user WHERE id = p_user_id) THEN
+        CALL proc_raise('El usuario indicado no existe.');
+    END IF;
+    IF IFNULL(p_content_type, '') NOT IN ('image/jpeg', 'image/png', 'image/webp') THEN
+        CALL proc_raise('La foto debe ser JPG, PNG o WEBP.');
+    END IF;
+    IF p_content IS NULL OR LENGTH(p_content) = 0 THEN
+        CALL proc_raise('La foto está vacía.');
+    END IF;
+    INSERT INTO user_photo (user_id, content_type, content) VALUES (p_user_id, p_content_type, p_content)
+    ON DUPLICATE KEY UPDATE content_type = p_content_type, content = p_content;
+END //
+
+DROP PROCEDURE IF EXISTS proc_delete_user_photo //
+CREATE PROCEDURE proc_delete_user_photo(
+    IN p_user_id INT
+)
+BEGIN
+    DELETE FROM user_photo WHERE user_id = p_user_id;
 END //
 
 DROP PROCEDURE IF EXISTS proc_validate_user //

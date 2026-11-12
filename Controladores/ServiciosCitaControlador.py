@@ -30,12 +30,13 @@ class ServiciosCitaControlador(ControladorBase):
 
     def ValidarCita(self, appointment_id) -> None:
         sesion = Permisos.SesionActual()
-        if sesion.EsAdmin():
-            return
         cita = _citas.BuscarPorId(appointment_id) if appointment_id else None
         if cita is None:
             raise NoEncontrado(f"No existe la cita con ID {appointment_id}.")
-        if not EsParticipante(sesion, cita):
+        if sesion.EsAdmin():
+            if not Permisos.AlcanceAdmin().Barbero(cita.GetBarberId()):
+                raise Prohibido("La cita no pertenece a las barberías que usted administra.")
+        elif not EsParticipante(sesion, cita):
             raise Prohibido("Solo puede ver o modificar los servicios de sus propias citas.")
 
     def PrepararDatos(self, datos: dict, nuevo: bool) -> None:

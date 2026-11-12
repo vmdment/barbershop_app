@@ -10,11 +10,16 @@ cambio de rol o la eliminación del usuario se aplican de inmediato.
 
 Roles (por el nombre de la tabla `role`, sin distinguir mayúsculas):
 
-    Administrador          -> ADMIN    todos los permisos
+    Administrador          -> ADMIN    todos los permisos, pero solo sobre SUS barberías (ver Alcance)
     Barbero                -> BARBERO  gestiona sus citas y vende productos
     Cliente (o Usuario)    -> CLIENTE  solicita y cancela sus citas, elige barbero
 
-Un usuario con otro rol (ej. "Asistente") no puede iniciar sesión.
+Un usuario con otro rol no puede iniciar sesión.
+
+Alcance del administrador: un administrador maneja solo las barberías donde es `manager_id` (puede tener
+varias) y, a través de ellas, sus barberos, horarios, bloqueos, citas, productos, ventas y compras.
+Los barberos sin barbería (solo a domicilio) los puede ver y asignar cualquier administrador.
+Los catálogos generales (usuarios, roles, servicios y proveedores) son comunes a todos.
 """
 import secrets
 from dataclasses import dataclass
@@ -22,7 +27,7 @@ from dataclasses import dataclass
 import flask
 import itsdangerous
 
-from Aplicaciones import BarberosAplicacion, UsuariosAplicacion
+from Aplicaciones import BarberiasAplicacion, BarberosAplicacion, UsuariosAplicacion
 from Utilidades import Configuracion
 
 ADMIN = "Administrador"
@@ -116,6 +121,7 @@ def _LeerToken() -> int:
 
 _usuarios = UsuariosAplicacion.UsuariosAplicacion()
 _barberos = BarberosAplicacion.BarberosAplicacion()
+_barberias = BarberiasAplicacion.BarberiasAplicacion()
 
 
 def CrearSesion(usuario) -> Sesion:
@@ -153,3 +159,33 @@ def SesionActual() -> Sesion:
     if sesion is None:
         raise NoAutenticado("Debe iniciar sesión.")
     return sesion
+
+
+# ------------------------------------------------------------------
+# Alcance del administrador: sus barberías y lo que depende de ellas
+# ------------------------------------------------------------------
+
+@dataclass
+class Alcance:
+    barberias: set          # IDs de las barberías que administra
+    barberos: set           # IDs de los barberos de esas barberías (y los que no tienen barbería)
+    usuarios_barberos: set  # IDs de usuario de esos barberos (vendedores de sus ventas)
+
+    def Barberia(self, barbershop_id) -> bool:
+        return barbershop_id in self.barberias
+
+    def Barbero(self, barber_id) -> bool:
+        return barber_id in self.barberos
+
+
+def AlcanceAdmin() -> Alcance:
+    """Se calcula una vez por petición."""
+    alcance = flask.g.get("alcance")
+    if alcance is None:
+        sesion = SesionActual()
+        barberias = {b.GetId() for b in _barberias.Consultar() if b.GetManagerId() == sesion.usuario_id}
+        barberos = [b for b in _barberos.Consultar()
+                    if b.GetBarbershopId() is None or b.GetBarbershopId() in barberias]
+        alcance = Alcance(barberias, {b.GetId() for b in barberos}, {b.GetUserId() for b in barberos})
+        flask.g.alcance = alcance
+    return alcance

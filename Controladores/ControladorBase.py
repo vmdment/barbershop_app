@@ -153,11 +153,13 @@ class ControladorBase:
 
     def __init__(self, nombre: str, clase, aplicacion, filtro: str | None = None,
                  leer: tuple = Permisos.SOLO_ADMIN, escribir: tuple = Permisos.SOLO_ADMIN,
-                 eliminar: tuple | None = None, crud: bool = True):
+                 eliminar: tuple | None = None, crud: bool = True, alcance=None):
         """nombre: segmento de la URL (/api/<nombre>); clase: clase de Entidades;
         aplicacion: objeto de Aplicaciones; filtro: parámetro obligatorio de Consultar();
         leer / escribir / eliminar: roles de las rutas GET, POST/PUT y DELETE (eliminar = escribir si se
-        omite); crud=False: sin rutas CRUD (el controlador registra las suyas)."""
+        omite); crud=False: sin rutas CRUD (el controlador registra las suyas);
+        alcance(entidad, Permisos.Alcance) -> bool: si el registro es de las barberías del administrador."""
+        self.alcance = alcance
         self.nombre = nombre
         self.clase = clase
         self.aplicacion = aplicacion
@@ -211,12 +213,24 @@ class ControladorBase:
 
     # --- Permisos sobre registros (los controladores con dueño los sobrescriben) ---
 
+    def EnAlcance(self, entidad, alcance: Permisos.Alcance) -> bool:
+        """¿La entidad pertenece a las barberías del administrador? Por defecto sí (catálogos comunes).
+        Se define con el parámetro `alcance` o sobrescribiendo este método."""
+        return self.alcance(entidad, alcance) if self.alcance else True
+
     def Autorizar(self, entidad, accion: str) -> None:
         """accion: "ver", "crear", "editar" o "eliminar". Lanza Permisos.Prohibido si la sesión
-        actual no puede hacerla sobre esta entidad. Por defecto, el rol de la ruta basta."""
+        actual no puede hacerla sobre esta entidad. Por defecto, el rol de la ruta basta y el
+        administrador queda limitado a sus barberías (EnAlcance)."""
+        sesion = Permisos.SesionActual()
+        if sesion.EsAdmin() and not self.EnAlcance(entidad, Permisos.AlcanceAdmin()):
+            raise Permisos.Prohibido("Ese registro no pertenece a las barberías que usted administra.")
 
     def FiltrarLista(self, entidades: list) -> list:
         """Deja en un listado solo lo que la sesión actual puede ver."""
+        if Permisos.SesionActual().EsAdmin():
+            alcance = Permisos.AlcanceAdmin()
+            return [e for e in entidades if self.EnAlcance(e, alcance)]
         return entidades
 
     def Obtener(self, id: int):

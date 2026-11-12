@@ -16,7 +16,7 @@ ESTADOS_POR_ROL = {
     CLIENTE: ("Cancelled",),
 }
 
-# Reprogramar = cambiar la fecha y la hora. El barbero no cambia el cliente, el barbero ni el lugar.
+# Reprogramar = cambiar la fecha y la hora. Barbero y cliente no cambian el cliente, el barbero ni el lugar.
 CAMPOS_REPROGRAMAR = {"appointment_date", "start_time", "end_time"}
 
 
@@ -42,8 +42,8 @@ class CitasControlador(ControladorBase):
                            "Solicitar cita (el cliente la pide a su nombre y elige el barbero)",
                            cuerpo="entidad", roles=(ADMIN, CLIENTE))
         self.RegistrarRuta("/<int:id>", "actualizar", self.Actualizar, "PUT",
-                           "Actualizar (barbero: solo reprogramar fecha y horas)",
-                           cuerpo="entidad", roles=(ADMIN, BARBERO))
+                           "Actualizar (barbero y cliente: solo reprogramar fecha y horas)",
+                           cuerpo="entidad", roles=TODOS)
         self.RegistrarRuta("/<int:id>", "eliminar", self.Eliminar, "DELETE", "Eliminar", respuesta="texto",
                            roles=(ADMIN,))
         self.RegistrarRuta("/cliente/<int:customer_id>", "por_cliente", self.ConsultarPorCliente, "GET",
@@ -62,15 +62,20 @@ class CitasControlador(ControladorBase):
         sesion = Permisos.SesionActual()
         if nuevo and sesion.rol == CLIENTE:
             datos["customer_id"] = sesion.usuario_id          # el cliente solo pide citas a su nombre
-        if not nuevo and sesion.rol == BARBERO:
+        if not nuevo and sesion.rol in (BARBERO, CLIENTE):
             otros = sorted(set(datos) - CAMPOS_REPROGRAMAR - {"id"})
             if otros:
-                raise Prohibido("El barbero solo puede reprogramar la cita (appointment_date, start_time, "
-                                f"end_time); no puede cambiar: {', '.join(otros)}.")
+                raise Prohibido(f"El {sesion.rol.lower()} solo puede reprogramar la cita (appointment_date, "
+                                f"start_time, end_time); no puede cambiar: {', '.join(otros)}.")
+
+    def EnAlcance(self, cita, alcance: Permisos.Alcance) -> bool:
+        return alcance.Barbero(cita.GetBarberId())
 
     def Autorizar(self, cita, accion: str) -> None:
         sesion = Permisos.SesionActual()
-        if not sesion.EsAdmin() and not EsParticipante(sesion, cita):
+        if sesion.EsAdmin():
+            super().Autorizar(cita, accion)
+        elif not EsParticipante(sesion, cita):
             raise Prohibido("Solo puede ver o modificar sus propias citas.")
 
     # --- Rutas ---
@@ -81,18 +86,20 @@ class CitasControlador(ControladorBase):
             return Respuesta(self.ListaJson(self.aplicacion.ConsultarPorCliente(sesion.usuario_id)))
         if sesion.rol == BARBERO:
             return Respuesta(self.ListaJson(self.aplicacion.ConsultarPorBarbero(sesion.barbero_id)))
-        return Respuesta(self.ListaJson(self.aplicacion.Consultar()))
+        return Respuesta(self.ListaJson(self.FiltrarLista(self.aplicacion.Consultar())))
 
     def ConsultarPorCliente(self, customer_id: int):
         sesion = Permisos.SesionActual()
         if sesion.rol == CLIENTE and customer_id != sesion.usuario_id:
             raise Prohibido("Solo puede consultar sus propias citas.")
-        return Respuesta(self.ListaJson(self.aplicacion.ConsultarPorCliente(customer_id)))
+        return Respuesta(self.ListaJson(self.FiltrarLista(self.aplicacion.ConsultarPorCliente(customer_id))))
 
     def ConsultarPorBarbero(self, barber_id: int):
         sesion = Permisos.SesionActual()
         if sesion.rol == BARBERO and barber_id != sesion.barbero_id:
             raise Prohibido("Solo puede consultar sus propias citas.")
+        if sesion.EsAdmin() and not Permisos.AlcanceAdmin().Barbero(barber_id):
+            raise Prohibido("Ese barbero no pertenece a las barberías que usted administra.")
         return Respuesta(self.ListaJson(self.aplicacion.ConsultarPorBarbero(barber_id)))
 
     def CambiarEstado(self, id: int):

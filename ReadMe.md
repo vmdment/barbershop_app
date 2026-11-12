@@ -133,16 +133,31 @@ Los roles se reconocen por el nombre en la tabla `role` (sin distinguir mayúscu
 Barbero debe tener su registro en `barberos` y estar activo. Las reglas están en `Controladores/Permisos.py`
 y en cada controlador.
 
+**Alcance del administrador:** cada administrador maneja solo las barberías donde es `manager_id`
+(puede tener varias) y lo que depende de ellas: sus barberos (y sus horarios, bloqueos y servicios),
+las citas de esos barberos, los productos y compras de sus barberías o barberos, y las ventas que hizo
+él o sus barberos. Los listados le llegan ya filtrados y lo ajeno responde 403. Al registrar una
+barbería queda como su administrador y no puede pasársela a otro. Los barberos sin barbería (solo a
+domicilio) los ve cualquier administrador para poder asignarlos. Usuarios, roles, servicios y
+proveedores son catálogos comunes.
+
 | Recurso | Administrador | Barbero | Cliente |
 |---|---|---|---|
-| `roles`, `usuarios`, `proveedores`, `compras` | todo | — | — |
-| `barberias`, `barberos`, `servicios`, `servicios-barbero`, `horarios` | todo | ver | ver |
-| `bloqueos` | todo | ver | — |
-| `productos` | todo | ver (para vender) | — |
-| `citas` | todo | ver las suyas, aceptar (`Confirmed`), cancelar, completar y reprogramar (solo `appointment_date`, `start_time`, `end_time`) | solicitar a su nombre eligiendo barbero, ver las suyas, cancelar |
-| `servicios-cita` | todo | los de sus citas, ajustar precio/duración | agregar o quitar en sus citas (el precio lo pone la base) |
-| `ventas` | todo | registrar (queda como vendedor), ver y editar las suyas | — |
-| `detalle-ventas` | todo | el de sus ventas | — |
+| `roles`, `usuarios`, `proveedores` | todo | — | — |
+| `usuarios/clientes` (id, nombre y correo) | ver | ver (para la venta) | — |
+| `compras` | las de sus barberías | — | — |
+| `barberias` | las suyas (registrar, editar, eliminar) | ver todas | ver todas |
+| `barberos`, `horarios`, `servicios-barbero` | los de sus barberías | ver | ver |
+| `servicios` | todo | ver | ver |
+| `bloqueos` | los de sus barberías | ver | — |
+| `productos` | los de sus barberías | ver (para vender) | — |
+| `citas` | las de sus barberos | ver las suyas, aceptar (`Confirmed`), cancelar, completar y reprogramar | solicitar a su nombre eligiendo barbero, ver las suyas, reprogramar y cancelar |
+| `servicios-cita` | los de sus citas | los de sus citas, ajustar precio/duración | agregar o quitar en sus citas (el precio lo pone la base) |
+| `ventas` | las suyas y las de sus barberos | registrar (queda como vendedor, elige el cliente), ver y editar las suyas; no elimina | — |
+| `detalle-ventas` | el de esas ventas | el de sus ventas: agregar, cambiar cantidad o quitar; no cambia el precio | — |
+
+Reprogramar = cambiar solo `appointment_date`, `start_time` y `end_time`. El barbero no crea citas ni
+maneja su horario o sus bloqueos: eso lo hace el administrador.
 
 - `GET /api/citas/mias`: las citas de la sesión (cliente: las que pidió; barbero: las que atiende).
 - La comisión de los barberos (`commission_rate`) solo la ve el administrador.

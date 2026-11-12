@@ -7,7 +7,11 @@
     PUT    /api/auth/perfil/foto  {"imagen": "data:image/png;base64,..."}  (JPG, PNG o WEBP de hasta 2 MB)
     DELETE /api/auth/perfil/foto  quita la foto
 
+    POST   /api/auth/salir        registra el cierre de sesión (el cliente luego borra el token)
+
 La foto de cualquier usuario se ve en GET /api/usuarios/<id>/foto (con sesión iniciada).
+Cada inicio de sesión, intento fallido, cuenta nueva y salida queda en el registro de accesos
+(Controladores/AccesosControlador.py).
 El token se envía en las demás rutas como `Authorization: Bearer <token>`. Cerrar sesión es borrar el
 token en el cliente (no se guarda en el servidor).
 """
@@ -15,7 +19,7 @@ import base64
 import binascii
 
 from Aplicaciones import BarberiasAplicacion, BarberosAplicacion, RolesAplicacion, UsuariosAplicacion
-from Controladores import Permisos
+from Controladores import AccesosControlador, Permisos
 from Controladores.ControladorBase import ControladorBase, ErrorPeticion, LeerJson, Respuesta, ValorJson
 from Entidades import Usuarios
 from Utilidades import Validaciones
@@ -67,6 +71,8 @@ class AutenticacionControlador(ControladorBase):
                                                   "password": {"type": "string", "format": "password",
                                                                "minLength": 6}}},
                            respuesta=ESQUEMA_LOGIN, roles=None)
+        self.RegistrarRuta("/salir", "salir", self.Salir, "POST", "Cerrar sesión (queda en el registro de accesos)",
+                           respuesta="texto", roles=Permisos.TODOS)
         self.RegistrarRuta("/perfil", "perfil", self.Perfil, "GET", "Perfil de la sesión actual",
                            respuesta=ESQUEMA_PERFIL, roles=Permisos.TODOS)
         self.RegistrarRuta("/perfil", "editar_perfil", self.EditarPerfil, "PUT",
@@ -97,8 +103,20 @@ class AutenticacionControlador(ControladorBase):
             raise ErrorPeticion("Envíe 'email' y 'password'.")
         usuario = self.aplicacion.BuscarPorEmail(email.strip())
         if usuario is None or not Validaciones.verificar_password(password, usuario.GetPasswordHash()):
+            AccesosControlador.Registrar(usuario.GetId() if usuario else None, email, "Failed")
             raise Permisos.NoAutenticado("Correo o contraseña incorrectos.")
-        return self.RespuestaSesion(Permisos.CrearSesion(usuario))
+        try:
+            sesion = Permisos.CrearSesion(usuario)
+        except Permisos.Prohibido:
+            AccesosControlador.Registrar(usuario.GetId(), email, "Failed")   # rol sin acceso o barbero inactivo
+            raise
+        AccesosControlador.Registrar(usuario.GetId(), usuario.GetEmail(), "Login")
+        return self.RespuestaSesion(sesion)
+
+    def Salir(self):
+        sesion = Permisos.SesionActual()
+        AccesosControlador.Registrar(sesion.usuario_id, sesion.email, "Logout")
+        return Respuesta("Sesión cerrada.")
 
     def Registro(self):
         """Cualquiera puede crear su cuenta, siempre con el rol Cliente.
@@ -115,6 +133,7 @@ class AutenticacionControlador(ControladorBase):
         usuario.SetRoleId(rol.GetId())
         usuario.SetPasswordHash(Validaciones.hashear_password(password))
         usuario = self.aplicacion.Insertar(usuario)
+        AccesosControlador.Registrar(usuario.GetId(), usuario.GetEmail(), "Register")
         return self.RespuestaSesion(Permisos.CrearSesion(self.aplicacion.BuscarPorId(usuario.GetId())), 201)
 
     # --- Perfil ---

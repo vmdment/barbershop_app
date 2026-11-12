@@ -7,7 +7,7 @@ import atexit
 
 import flask
 
-from Controladores import (AutenticacionControlador, BarberiasControlador, BarberosControlador,
+from Controladores import (AccesosControlador, AutenticacionControlador, BarberiasControlador, BarberosControlador,
                            BloqueosControlador, CitasControlador, ComprasControlador, DetalleVentasControlador, HorariosControlador,
                            ProductosControlador, ProveedoresControlador, RolesControlador,
                            ServiciosBarberoControlador, ServiciosCitaControlador, ServiciosControlador,
@@ -15,7 +15,7 @@ from Controladores import (AutenticacionControlador, BarberiasControlador, Barbe
 from Utilidades import Conexion, Configuracion
 
 CONTROLADORES = [
-    AutenticacionControlador, RolesControlador, UsuariosControlador, BarberiasControlador,
+    AutenticacionControlador, AccesosControlador, RolesControlador, UsuariosControlador, BarberiasControlador,
     BarberosControlador, HorariosControlador, BloqueosControlador, ServiciosControlador, ServiciosBarberoControlador,
     CitasControlador, ServiciosCitaControlador, ProductosControlador, VentasControlador,
     DetalleVentasControlador, ProveedoresControlador, ComprasControlador,

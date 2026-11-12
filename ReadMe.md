@@ -124,7 +124,13 @@ exigen la cabecera `Authorization: Bearer <token>`. En Swagger, pegue el token e
 
 - `POST /api/auth/registro` (`full_name`, `email`, `phone`, `password`): crea una cuenta, siempre
   con rol Cliente, y devuelve la sesión iniciada.
-- `GET /api/auth/perfil`: datos de la sesión (`id`, `full_name`, `email`, `rol`, `barber_id`).
+- `GET /api/auth/perfil`: perfil de la sesión (datos, rol, barbería, `tiene_foto`). `PUT /api/auth/perfil`
+  cambia nombre y teléfono, o la contraseña enviando `password_actual` y `password_nueva`.
+- Foto de perfil: `PUT /api/auth/perfil/foto` con `{"imagen": "data:image/png;base64,..."}` (JPG, PNG o
+  WEBP de hasta 2 MB), `DELETE /api/auth/perfil/foto`, y `GET /api/usuarios/<id>/foto` para verla.
+- Registro de accesos (tabla `access_log`): cada inicio de sesión, intento fallido, cuenta nueva y
+  `POST /api/auth/salir` queda con fecha, IP y navegador. `GET /api/accesos` (administrador: los suyos,
+  los de sus barberos, los clientes y los correos inexistentes) y `GET /api/accesos/mios` (cada usuario).
 - Cerrar sesión = borrar el token en el cliente. La sesión dura `SESION_HORAS` (8 por defecto).
 - El rol se lee de la base en cada petición: cambiar el rol o eliminar al usuario aplica de inmediato.
 

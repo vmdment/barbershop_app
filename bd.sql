@@ -1,5 +1,5 @@
 -- ============================================================
--- DATABASE CREATION SCRIPT: BARBERSHOP (16 TABLES)
+-- DATABASE CREATION SCRIPT: BARBERSHOP (17 TABLES)
 -- SINGULAR ENTITIES & ENGLISH ATTRIBUTES
 -- ============================================================
 
@@ -193,6 +193,19 @@ CREATE TABLE IF NOT EXISTS user_photo (
     CONSTRAINT fk_photo_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- 17. Access Log (registro de accesos: inicios de sesión, intentos fallidos, registros y salidas)
+CREATE TABLE IF NOT EXISTS access_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NULL,
+    email VARCHAR(100) NOT NULL,
+    event ENUM('Login', 'Failed', 'Register', 'Logout') NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(255) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_access_user (user_id, created_at),
+    CONSTRAINT fk_access_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 USE barbershop_db;
 
 -- Roles del inicio de sesión (la API reconoce estos nombres; ver Controladores/Permisos.py)
@@ -358,6 +371,37 @@ CREATE PROCEDURE proc_delete_user_photo(
 )
 BEGIN
     DELETE FROM user_photo WHERE user_id = p_user_id;
+END //
+
+-- Registro de accesos
+DROP PROCEDURE IF EXISTS proc_insert_access_log //
+CREATE PROCEDURE proc_insert_access_log(
+    IN p_user_id INT,
+    IN p_email VARCHAR(100),
+    IN p_event VARCHAR(10),
+    IN p_ip_address VARCHAR(45),
+    IN p_user_agent VARCHAR(255)
+)
+BEGIN
+    INSERT INTO access_log (user_id, email, event, ip_address, user_agent)
+    VALUES (p_user_id, LEFT(IFNULL(p_email, ''), 100), p_event, LEFT(p_ip_address, 45), LEFT(p_user_agent, 255));
+END //
+
+-- p_user_id NULL = todos; p_limit = cuántos (los más recientes primero)
+DROP PROCEDURE IF EXISTS proc_select_access_log //
+CREATE PROCEDURE proc_select_access_log(
+    IN p_user_id INT,
+    IN p_limit INT
+)
+BEGIN
+    SELECT a.id, a.user_id, u.full_name, r.name AS role_name, a.email, a.event, a.ip_address,
+           a.user_agent, a.created_at
+    FROM access_log a
+    LEFT JOIN user u ON a.user_id = u.id
+    LEFT JOIN role r ON u.role_id = r.id
+    WHERE p_user_id IS NULL OR a.user_id = p_user_id
+    ORDER BY a.created_at DESC, a.id DESC
+    LIMIT p_limit;
 END //
 
 DROP PROCEDURE IF EXISTS proc_validate_user //
